@@ -1,0 +1,1042 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CDI SafeTrack</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="libs/react.min.js"></script>
+    <script src="libs/react-dom.min.js"></script>
+    <script src="libs/babel.min.js"></script>
+    <script src="libs/lucide.min.js"></script>
+    <script src="libs/xlsx.min.js"></script>
+    <script>
+        tailwind.config = { theme: { extend: { colors: { edu: { blue: '#0055FF', red: '#E1000F' } } } } }
+    </script>
+    <style>
+        body {
+            font-family: system-ui, sans-serif;
+        }
+
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 2px;
+        }
+
+        @keyframes flashIn {
+            0% {
+                background: #d1fae5;
+            }
+
+            100% {
+                background: transparent;
+            }
+        }
+
+        @keyframes flashOut {
+            0% {
+                background: #fee2e2;
+            }
+
+            100% {
+                background: transparent;
+            }
+        }
+
+        @keyframes toastIn {
+            from {
+                transform: translateY(-20px);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        .flash-in {
+            animation: flashIn 0.3s ease-out;
+        }
+
+        .flash-out {
+            animation: flashOut 0.3s ease-out;
+        }
+
+        .toast {
+            animation: toastIn 0.2s ease-out;
+        }
+
+        /* FASE 3.4: Print Styles */
+        @media print {
+            body {
+                background: white !important;
+            }
+
+            .no-print {
+                display: none !important;
+            }
+
+            .print-only {
+                display: block !important;
+            }
+
+            .print-header {
+                display: block !important;
+                text-align: center;
+                margin-bottom: 20px;
+            }
+
+            .print-content {
+                display: block !important;
+            }
+
+            * {
+                color: black !important;
+                background: white !important;
+            }
+
+            .print-table {
+                width: 100%;
+                border-collapse: collapse;
+            }
+
+            .print-table th,
+            .print-table td {
+                border: 1px solid #ccc;
+                padding: 8px;
+                text-align: left;
+                font-size: 12pt;
+            }
+        }
+
+        .print-only,
+        .print-header {
+            display: none;
+        }
+
+        /* RESPONSIVE: Tablet & Mobile */
+        @media (max-width: 1024px) {
+            .main-layout {
+                flex-direction: column !important;
+            }
+
+            .panel-left,
+            .panel-right {
+                width: 100% !important;
+                height: 50% !important;
+            }
+
+            .panel-left {
+                border-right: none !important;
+                border-bottom: 1px solid #e2e8f0;
+            }
+
+            .search-sticky {
+                position: sticky;
+                top: 0;
+                z-index: 10;
+                background: #f8fafc;
+                padding-top: 0.5rem;
+                margin-top: -0.5rem;
+            }
+
+            .touch-target {
+                min-width: 44px !important;
+                min-height: 44px !important;
+            }
+
+            .mobile-card {
+                padding: 1rem !important;
+            }
+
+            .mobile-remove-btn {
+                opacity: 1 !important;
+                width: 44px;
+                height: 44px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+        }
+
+        @media (max-width: 640px) {
+
+            .panel-left,
+            .panel-right {
+                height: auto !important;
+                min-height: 40vh;
+                max-height: 60vh;
+            }
+
+            .header-compact .header-text {
+                display: none;
+            }
+
+            .filter-chips {
+                flex-wrap: nowrap;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+
+            .emergency-name {
+                font-size: 1.25rem !important;
+            }
+
+            .emergency-count {
+                font-size: 4rem !important;
+            }
+        }
+    </style>
+</head>
+
+<body class="bg-slate-100 h-screen overflow-hidden">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useCallback, useMemo } = React;
+
+        const DEFAULT_STUDENTS = [
+            { id: 'DEMO001', name: 'Élève Exemple', class: '2nde A' }
+        ];
+
+        const CAPACITY = 50;
+        const STORAGE = { students: 'cdi_students', present: 'cdi_present', logs: 'cdi_logs', muted: 'cdi_muted', pin: 'cdi_pin' };
+        const DEFAULT_PIN = '1234';
+
+        // Audio
+        const audioCtx = { ctx: null };
+        const playBeep = (freq, dur, type = 'sine') => {
+            if (!audioCtx.ctx) audioCtx.ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const osc = audioCtx.ctx.createOscillator(), gain = audioCtx.ctx.createGain();
+            osc.connect(gain); gain.connect(audioCtx.ctx.destination);
+            osc.type = type; osc.frequency.value = freq; gain.gain.value = 0.1;
+            osc.start(); gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.ctx.currentTime + dur);
+            osc.stop(audioCtx.ctx.currentTime + dur);
+        };
+        const Sound = { success: () => playBeep(880, 0.15), exit: () => playBeep(440, 0.2), error: () => { playBeep(220, 0.1, 'square'); setTimeout(() => playBeep(220, 0.1, 'square'), 120); } };
+
+        // Icon Component - Using Lucide's createElement
+        const Icon = ({ name, size = 20 }) => {
+            const ref = useRef(null);
+            useEffect(() => {
+                if (ref.current) {
+                    ref.current.innerHTML = '';
+                    // Convert kebab-case to PascalCase for lucide
+                    const pascalName = name.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join('');
+                    if (lucide[pascalName]) {
+                        const svg = lucide.createElement(lucide[pascalName]);
+                        svg.setAttribute('width', size);
+                        svg.setAttribute('height', size);
+                        ref.current.appendChild(svg);
+                    }
+                }
+            }, [name, size]);
+            return <span ref={ref} className="inline-flex" />;
+        };
+
+        const Clock = () => {
+            const [time, setTime] = useState('--:--');
+            useEffect(() => { const u = () => setTime(new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })); u(); const i = setInterval(u, 60000); return () => clearInterval(i); }, []);
+            return <span className="font-mono text-slate-600">{time}</span>;
+        };
+
+        const Toast = ({ message, type, onClose }) => {
+            useEffect(() => { const t = setTimeout(onClose, 2500); return () => clearTimeout(t); }, []);
+            return <div className={`toast fixed top-4 right-4 px-4 py-3 rounded-lg shadow-lg z-50 flex items-center gap-2 ${type === 'in' || type === 'success' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'}`}><Icon name={type === 'in' ? 'log-in' : type === 'success' ? 'check' : 'log-out'} size={18} />{message}</div>;
+        };
+
+        // FASE 3.1: Stats Dashboard Modal (UPGRADED)
+        const StatsModal = ({ open, onClose, logs, students }) => {
+            const [timeRange, setTimeRange] = useState('week'); // 'week' or 'month'
+            const [showReport, setShowReport] = useState(false);
+            if (!open) return null;
+
+            // Filter logs by time range
+            const filteredLogs = useMemo(() => {
+                const now = new Date();
+                const cutoff = timeRange === 'week'
+                    ? new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+                    : new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+                return logs.filter(l => l.timestamp >= cutoff.getTime());
+            }, [logs, timeRange]);
+
+            // Peak hours analysis
+            const hourCounts = useMemo(() => {
+                const counts = {};
+                filteredLogs.filter(l => l.action === 'IN').forEach(l => {
+                    const h = new Date(l.timestamp).getHours();
+                    counts[h] = (counts[h] || 0) + 1;
+                });
+                return counts;
+            }, [filteredLogs]);
+            const maxHour = Math.max(...Object.values(hourCounts), 1);
+
+            // Attendance by day of week
+            const dayCounts = useMemo(() => {
+                const days = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }; // Lun-Ven
+                filteredLogs.filter(l => l.action === 'IN').forEach(l => {
+                    const d = new Date(l.timestamp).getDay();
+                    if (d >= 1 && d <= 5) days[d]++;
+                });
+                return days;
+            }, [filteredLogs]);
+            const maxDay = Math.max(...Object.values(dayCounts), 1);
+            const dayNames = { 1: 'Lun', 2: 'Mar', 3: 'Mer', 4: 'Jeu', 5: 'Ven' };
+
+            // Class distribution
+            const classDistribution = useMemo(() => {
+                const counts = {};
+                filteredLogs.filter(l => l.action === 'IN').forEach(l => {
+                    const s = students.find(st => st.id === l.studentId);
+                    if (s) {
+                        const level = s.class.split(' ')[0]; // Get "2nde", "1ère", "Terminale"
+                        counts[level] = (counts[level] || 0) + 1;
+                    }
+                });
+                const total = Object.values(counts).reduce((a, b) => a + b, 0) || 1;
+                return Object.entries(counts)
+                    .map(([name, count]) => ({ name, count, percent: Math.round(count / total * 100) }))
+                    .sort((a, b) => b.count - a.count);
+            }, [filteredLogs, students]);
+
+            // Unique visits
+            const uniqueVisits = new Set(filteredLogs.map(l => l.studentId)).size;
+            const totalVisits = filteredLogs.filter(l => l.action === 'IN').length;
+
+            // Average duration
+            const avgDuration = useMemo(() => {
+                const visits = {};
+                filteredLogs.forEach(l => {
+                    if (!visits[l.studentId]) visits[l.studentId] = [];
+                    visits[l.studentId].push(l);
+                });
+                let totalDur = 0, count = 0;
+                Object.values(visits).forEach(v => {
+                    for (let i = 0; i < v.length - 1; i += 2) {
+                        if (v[i].action === 'IN' && v[i + 1]?.action === 'OUT') {
+                            totalDur += v[i + 1].timestamp - v[i].timestamp;
+                            count++;
+                        }
+                    }
+                });
+                return count > 0 ? Math.round(totalDur / count / 60000) : 0;
+            }, [filteredLogs]);
+
+            // Top class
+            const topClass = classDistribution[0]?.name || '-';
+
+            // Colors for class bars
+            const classColors = ['#0055FF', '#10B981', '#8B5CF6', '#F59E0B', '#EF4444', '#EC4899'];
+
+            // Generate PDF Report
+            const generateReport = () => {
+                setShowReport(true);
+                setTimeout(() => {
+                    window.print();
+                    setShowReport(false);
+                }, 100);
+            };
+
+            // Report View (for printing)
+            if (showReport) {
+                return (
+                    <div className="fixed inset-0 bg-white z-50 p-8 overflow-auto" id="report-view">
+                        <style>{`@media print { body * { visibility: hidden; } #report-view, #report-view * { visibility: visible; } #report-view { position: absolute; left: 0; top: 0; width: 100%; } .no-print { display: none !important; } }`}</style>
+                        <div className="max-w-3xl mx-auto">
+                            <header className="text-center border-b-2 pb-4 mb-6">
+                                <h1 className="text-2xl font-bold">CDI - Rapport de Fréquentation</h1>
+                                <p className="text-gray-600">{timeRange === 'week' ? 'Rapport Hebdomadaire' : 'Rapport Mensuel'}</p>
+                                <p className="text-sm text-gray-500">Généré le {new Date().toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                            </header>
+
+                            <section className="mb-6">
+                                <h2 className="font-bold text-lg border-b pb-2 mb-3">Résumé des Visites</h2>
+                                <div className="grid grid-cols-3 gap-4 text-center">
+                                    <div className="border rounded p-3"><div className="text-2xl font-bold">{totalVisits}</div><div className="text-sm text-gray-600">Entrées totales</div></div>
+                                    <div className="border rounded p-3"><div className="text-2xl font-bold">{uniqueVisits}</div><div className="text-sm text-gray-600">Visiteurs uniques</div></div>
+                                    <div className="border rounded p-3"><div className="text-2xl font-bold">{avgDuration} min</div><div className="text-sm text-gray-600">Durée moyenne</div></div>
+                                </div>
+                            </section>
+
+                            <section className="mb-6">
+                                <h2 className="font-bold text-lg border-b pb-2 mb-3">Fréquentation par Jour</h2>
+                                <table className="w-full border-collapse">
+                                    <thead><tr className="bg-gray-100"><th className="border p-2 text-left">Jour</th><th className="border p-2 text-right">Entrées</th></tr></thead>
+                                    <tbody>
+                                        {Object.entries(dayNames).map(([d, name]) => (
+                                            <tr key={d}><td className="border p-2">{name}</td><td className="border p-2 text-right">{dayCounts[d] || 0}</td></tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </section>
+
+                            <section className="mb-6">
+                                <h2 className="font-bold text-lg border-b pb-2 mb-3">Répartition par Niveau</h2>
+                                <table className="w-full border-collapse">
+                                    <thead><tr className="bg-gray-100"><th className="border p-2 text-left">Niveau</th><th className="border p-2 text-right">Visites</th><th className="border p-2 text-right">%</th></tr></thead>
+                                    <tbody>
+                                        {classDistribution.map(c => (
+                                            <tr key={c.name}><td className="border p-2">{c.name}</td><td className="border p-2 text-right">{c.count}</td><td className="border p-2 text-right">{c.percent}%</td></tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </section>
+
+                            <section className="mt-12 pt-8 border-t">
+                                <div className="flex justify-between">
+                                    <div><p className="text-sm text-gray-500">Signature du Documentaliste:</p><div className="mt-8 border-b w-48"></div></div>
+                                    <div><p className="text-sm text-gray-500">Date:</p><div className="mt-8 border-b w-32"></div></div>
+                                </div>
+                            </section>
+                        </div>
+                        <button onClick={() => setShowReport(false)} className="no-print fixed top-4 right-4 bg-red-500 text-white px-4 py-2 rounded">Fermer</button>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
+                    <div className="bg-white rounded-xl w-full max-w-3xl mx-4 p-6 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                        <div className="flex justify-between items-center mb-4">
+                            <h2 className="font-bold text-xl flex items-center gap-2"><Icon name="bar-chart-3" size={24} /> Dashboard & Rapports</h2>
+                            <button onClick={onClose}><Icon name="x" size={24} /></button>
+                        </div>
+
+                        {/* Time Range Selector */}
+                        <div className="flex gap-2 mb-6">
+                            <button onClick={() => setTimeRange('week')} className={`flex-1 py-2 rounded-lg text-sm font-medium ${timeRange === 'week' ? 'bg-edu-blue text-white' : 'bg-slate-100 text-slate-600'}`}>
+                                Cette Semaine
+                            </button>
+                            <button onClick={() => setTimeRange('month')} className={`flex-1 py-2 rounded-lg text-sm font-medium ${timeRange === 'month' ? 'bg-edu-blue text-white' : 'bg-slate-100 text-slate-600'}`}>
+                                Ce Mois
+                            </button>
+                        </div>
+
+                        {filteredLogs.length === 0 ? (
+                            <div className="text-center py-12 text-slate-400">
+                                <Icon name="calendar-x" size={48} />
+                                <p className="mt-4">Pas de données pour cette période</p>
+                            </div>
+                        ) : (
+                            <React.Fragment>
+                                {/* KPI Cards */}
+                                <div className="grid grid-cols-4 gap-3 mb-6">
+                                    <div className="bg-blue-50 rounded-xl p-3 text-center">
+                                        <div className="text-2xl font-bold text-edu-blue">{totalVisits}</div>
+                                        <div className="text-xs text-slate-500">Entrées</div>
+                                    </div>
+                                    <div className="bg-indigo-50 rounded-xl p-3 text-center">
+                                        <div className="text-2xl font-bold text-indigo-600">{uniqueVisits}</div>
+                                        <div className="text-xs text-slate-500">Uniques</div>
+                                    </div>
+                                    <div className="bg-green-50 rounded-xl p-3 text-center">
+                                        <div className="text-2xl font-bold text-green-600">{avgDuration}m</div>
+                                        <div className="text-xs text-slate-500">Durée moy.</div>
+                                    </div>
+                                    <div className="bg-purple-50 rounded-xl p-3 text-center">
+                                        <div className="text-lg font-bold text-purple-600">{topClass}</div>
+                                        <div className="text-xs text-slate-500">Top classe</div>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4 mb-6">
+                                    {/* Attendance by Day Chart */}
+                                    <div className="bg-slate-50 rounded-xl p-4">
+                                        <h3 className="font-semibold mb-3 text-sm">Fréquentation par Jour</h3>
+                                        <div className="flex items-end gap-2 h-28">
+                                            {Object.entries(dayNames).map(([d, name]) => (
+                                                <div key={d} className="flex-1 flex flex-col items-center">
+                                                    <div className="text-xs font-medium text-slate-600 mb-1">{dayCounts[d] || 0}</div>
+                                                    <div className="w-full bg-edu-blue rounded-t transition-all" style={{ height: `${(dayCounts[d] || 0) / maxDay * 80}%`, minHeight: dayCounts[d] ? '8px' : '2px', opacity: dayCounts[d] ? 1 : 0.2 }}></div>
+                                                    <span className="text-xs text-slate-500 mt-1">{name}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Peak Hours Chart */}
+                                    <div className="bg-slate-50 rounded-xl p-4">
+                                        <h3 className="font-semibold mb-3 text-sm">Affluence par Heure</h3>
+                                        <div className="flex items-end gap-1 h-28">
+                                            {Array.from({ length: 10 }, (_, i) => i + 8).map(h => (
+                                                <div key={h} className="flex-1 flex flex-col items-center">
+                                                    <div className="w-full bg-green-500 rounded-t transition-all" style={{ height: `${(hourCounts[h] || 0) / maxHour * 80}%`, minHeight: hourCounts[h] ? '4px' : '2px', opacity: hourCounts[h] ? 1 : 0.2 }}></div>
+                                                    <span className="text-xs text-slate-400 mt-1">{h}h</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Class Distribution */}
+                                <div className="bg-slate-50 rounded-xl p-4 mb-6">
+                                    <h3 className="font-semibold mb-3 text-sm">Répartition par Niveau</h3>
+                                    {classDistribution.length === 0 ? (
+                                        <p className="text-slate-400 text-sm">Aucune donnée</p>
+                                    ) : (
+                                        <div className="space-y-2">
+                                            {classDistribution.map((c, i) => (
+                                                <div key={c.name} className="flex items-center gap-3">
+                                                    <span className="w-20 text-sm font-medium text-slate-700">{c.name}</span>
+                                                    <div className="flex-1 h-6 bg-slate-200 rounded-full overflow-hidden">
+                                                        <div className="h-full rounded-full transition-all" style={{ width: `${c.percent}%`, backgroundColor: classColors[i % classColors.length] }}></div>
+                                                    </div>
+                                                    <span className="w-16 text-sm text-right text-slate-600">{c.percent}% ({c.count})</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Report Generator */}
+                                <button onClick={generateReport} className="w-full py-3 bg-slate-800 text-white rounded-xl font-medium flex items-center justify-center gap-2 hover:bg-slate-700">
+                                    <Icon name="file-text" size={20} /> Générer Rapport (PDF Print)
+                                </button>
+                            </React.Fragment>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        // FASE 3.2: Student Management Modal
+        const StudentManagerModal = ({ open, onClose, students, setStudents, setToast }) => {
+            const [newStudent, setNewStudent] = useState({ name: '', class: '', id: '' });
+            const [editing, setEditing] = useState(null);
+            if (!open) return null;
+
+            const generateId = () => 'E' + String(Math.max(...students.map(s => parseInt(s.id.slice(1)) || 0), 0) + 1).padStart(3, '0');
+
+            const handleAdd = () => {
+                if (!newStudent.name || !newStudent.class) return;
+                const id = newStudent.id || generateId();
+                if (students.some(s => s.id === id)) { setToast({ message: 'ID déjà existant', type: 'error' }); return; }
+                setStudents([...students, { id, name: newStudent.name, class: newStudent.class }]);
+                setNewStudent({ name: '', class: '', id: '' });
+                setToast({ message: 'Élève ajouté', type: 'success' });
+            };
+
+            const handleDelete = (id) => {
+                if (!confirm('Supprimer cet élève ?')) return;
+                setStudents(students.filter(s => s.id !== id));
+            };
+
+            const handleEdit = (s) => setEditing({ ...s });
+            const handleSaveEdit = () => {
+                setStudents(students.map(s => s.id === editing.id ? editing : s));
+                setEditing(null);
+            };
+
+            return (
+                <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
+                    <div className="bg-white rounded-xl w-full max-w-lg mx-4 p-5 max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                        <div className="flex justify-between items-center mb-4">
+                            <h2 className="font-bold text-lg">Base Élèves ({students.length})</h2>
+                            <button onClick={onClose}><Icon name="x" size={20} /></button>
+                        </div>
+
+                        {/* Add Form */}
+                        <div className="bg-slate-50 rounded-lg p-3 mb-4">
+                            <div className="grid grid-cols-3 gap-2 mb-2">
+                                <input placeholder="Nom Prénom" value={newStudent.name} onChange={e => setNewStudent({ ...newStudent, name: e.target.value })} className="px-2 py-1.5 border rounded text-sm" />
+                                <input placeholder="Classe" value={newStudent.class} onChange={e => setNewStudent({ ...newStudent, class: e.target.value })} className="px-2 py-1.5 border rounded text-sm" />
+                                <input placeholder="ID (auto)" value={newStudent.id} onChange={e => setNewStudent({ ...newStudent, id: e.target.value })} className="px-2 py-1.5 border rounded text-sm" />
+                            </div>
+                            <button onClick={handleAdd} className="w-full py-1.5 bg-edu-blue text-white rounded text-sm font-medium flex items-center justify-center gap-1">
+                                <Icon name="plus" size={16} /> Ajouter
+                            </button>
+                        </div>
+
+                        {/* Student List */}
+                        <div className="flex-1 overflow-y-auto space-y-1">
+                            {students.map(s => (
+                                <div key={s.id} className="p-2 bg-slate-50 rounded flex items-center justify-between">
+                                    {editing?.id === s.id ? (
+                                        <div className="flex-1 flex gap-2 mr-2">
+                                            <input value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} className="flex-1 px-2 py-1 border rounded text-sm" />
+                                            <input value={editing.class} onChange={e => setEditing({ ...editing, class: e.target.value })} className="w-24 px-2 py-1 border rounded text-sm" />
+                                            <button onClick={handleSaveEdit} className="text-green-600"><Icon name="check" size={18} /></button>
+                                            <button onClick={() => setEditing(null)} className="text-slate-400"><Icon name="x" size={18} /></button>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-xs text-slate-400 font-mono">{s.id}</span>
+                                                <span className="font-medium text-sm">{s.name}</span>
+                                                <span className="text-xs bg-slate-200 px-1.5 rounded">{s.class}</span>
+                                            </div>
+                                            <div className="flex gap-1">
+                                                <button onClick={() => handleEdit(s)} className="text-slate-400 hover:text-edu-blue"><Icon name="pencil" size={16} /></button>
+                                                <button onClick={() => handleDelete(s.id)} className="text-slate-400 hover:text-edu-red"><Icon name="trash-2" size={16} /></button>
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // Settings Modal
+        const SettingsModal = ({ open, onClose, onImport, onReset, onRestore, count, muted, setMuted, pin, setPin, students, presentStudents, logs }) => {
+            const [text, setText] = useState('');
+            const [newPin, setNewPin] = useState(pin);
+            const fileInputRef = useRef(null);
+            const csvInputRef = useRef(null);
+            if (!open) return null;
+
+            const parse = () => {
+                const lines = text.trim().split('\n'), data = [];
+                for (const line of lines) {
+                    if (!line.trim() || line.toLowerCase().startsWith('id')) continue;
+                    const sep = line.includes(';') ? ';' : ',';
+                    const p = line.split(sep).map(x => x.trim().replace(/^["']|["']$/g, ''));
+                    if (p.length >= 3) data.push({ id: p[0], name: p[1], class: p[2] });
+                }
+                if (!data.length) try { JSON.parse(text).forEach(i => i.id && i.name && i.class && data.push(i)); } catch { }
+                return data;
+            };
+
+            // Full backup export
+            const exportBackup = () => {
+                const backup = {
+                    version: '1.0',
+                    timestamp: new Date().toISOString(),
+                    students: students,
+                    presentStudents: [...presentStudents],
+                    logs: logs,
+                    settings: { muted, pin }
+                };
+                const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = `cdi_backup_${new Date().toISOString().slice(0, 10)}.json`;
+                a.click();
+            };
+
+            // Restore from backup
+            const handleRestore = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    try {
+                        const data = JSON.parse(ev.target.result);
+                        if (!data.students || !data.presentStudents) {
+                            alert('Format de sauvegarde invalide');
+                            return;
+                        }
+                        if (!confirm('⚠️ Ceci va remplacer toutes les données actuelles. Continuer?')) return;
+                        onRestore(data);
+                        onClose();
+                    } catch {
+                        alert('Erreur de lecture du fichier');
+                    }
+                };
+                reader.readAsText(file);
+                e.target.value = '';
+            };
+
+            return (
+                <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
+                    <div className="bg-white rounded-xl w-full max-w-md mx-4 p-5 max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                        <div className="flex justify-between items-center mb-4">
+                            <h2 className="font-bold text-lg">Paramètres</h2>
+                            <button onClick={onClose}><Icon name="x" size={20} /></button>
+                        </div>
+                        <div className="flex items-center justify-between py-3 border-b">
+                            <span className="font-medium">Sons</span>
+                            <button onClick={() => setMuted(!muted)} className={`w-10 h-6 rounded-full relative ${muted ? 'bg-slate-300' : 'bg-green-500'}`}>
+                                <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 shadow transition-all ${muted ? 'left-0.5' : 'left-4.5'}`}></div>
+                            </button>
+                        </div>
+                        <div className="py-3 border-b">
+                            <label className="text-sm font-medium">Code PIN</label>
+                            <input type="password" value={newPin} onChange={e => setNewPin(e.target.value)} className="w-full mt-1 px-3 py-2 border rounded text-center tracking-widest" maxLength={6} />
+                            <button onClick={() => { setPin(newPin); localStorage.setItem(STORAGE.pin, newPin); }} className="mt-2 text-sm text-edu-blue">Sauvegarder</button>
+                        </div>
+                        <div className="py-3 border-b">
+                            <label className="text-sm font-medium">Importer élèves (Excel/CSV)</label>
+                            <div className="flex gap-2 mt-2 mb-2">
+                                <button onClick={() => csvInputRef.current?.click()} className="flex-1 py-2 bg-green-100 text-green-700 rounded text-sm flex items-center justify-center gap-1 hover:bg-green-200">
+                                    <Icon name="file-spreadsheet" size={16} /> Fichier Excel/CSV
+                                </button>
+                                <input ref={csvInputRef} type="file" accept=".xlsx,.xls,.csv,.txt,.json" onChange={(e) => {
+                                    const file = e.target.files[0];
+                                    if (!file) return;
+
+                                    // Check if Excel file
+                                    if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+                                        const reader = new FileReader();
+                                        reader.onload = (ev) => {
+                                            try {
+                                                const workbook = XLSX.read(ev.target.result, { type: 'array' });
+                                                const sheetName = workbook.SheetNames[0];
+                                                const sheet = workbook.Sheets[sheetName];
+                                                const data = XLSX.utils.sheet_to_csv(sheet);
+                                                setText(data);
+                                            } catch (err) {
+                                                alert('Erreur lecture Excel: ' + err.message);
+                                            }
+                                        };
+                                        reader.readAsArrayBuffer(file);
+                                    } else {
+                                        // CSV/Text file
+                                        const reader = new FileReader();
+                                        reader.onload = (ev) => setText(ev.target.result);
+                                        reader.readAsText(file);
+                                    }
+                                    e.target.value = '';
+                                }} className="hidden" />
+                            </div>
+                            <textarea value={text} onChange={e => setText(e.target.value)} className="w-full h-20 p-2 border rounded font-mono text-sm" placeholder="ID,Nom,Classe&#10;2024001,Dupont Marie,2nde A" />
+                            <button onClick={() => { const d = parse(); if (d.length) { onImport(d); setText(''); alert(`${d.length} élèves importés!`); onClose(); } else { alert('Aucun élève détecté. Vérifiez le format: ID, Nom, Classe'); } }} className="mt-2 px-4 py-2 bg-edu-blue text-white rounded text-sm w-full">Importer {text ? `(${parse().length} élèves)` : ''}</button>
+                        </div>
+
+                        {/* Backup/Restore Section */}
+                        <div className="py-3 border-b">
+                            <label className="text-sm font-medium flex items-center gap-2"><Icon name="database" size={16} /> Sauvegarde Système</label>
+                            <div className="flex gap-2 mt-2">
+                                <button onClick={exportBackup} className="flex-1 py-2 bg-green-50 text-green-700 rounded text-sm flex items-center justify-center gap-1">
+                                    <Icon name="download" size={16} /> Exporter
+                                </button>
+                                <button onClick={() => fileInputRef.current?.click()} className="flex-1 py-2 bg-blue-50 text-edu-blue rounded text-sm flex items-center justify-center gap-1">
+                                    <Icon name="upload" size={16} /> Restaurer
+                                </button>
+                                <input ref={fileInputRef} type="file" accept=".json" onChange={handleRestore} className="hidden" />
+                            </div>
+                        </div>
+
+                        <div className="pt-3">
+                            <p className="text-sm text-slate-500 mb-2">{count} élèves • {logs.length} mouvements</p>
+                            <button onClick={() => confirm('Réinitialiser toutes les présences?') && (onReset(), onClose())} className="w-full py-2 bg-red-50 text-edu-red rounded text-sm">Réinitialiser présences</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // History Modal
+        const HistoryModal = ({ open, onClose, logs, students }) => {
+            if (!open) return null;
+            const getName = (id) => students.find(s => s.id === id)?.name || id;
+            const getClass = (id) => students.find(s => s.id === id)?.class || '';
+            const exportCSV = () => {
+                const rows = ['Heure,Nom,Classe,Action', ...logs.map(l => `${new Date(l.timestamp).toLocaleTimeString('fr-FR')},${getName(l.studentId)},${getClass(l.studentId)},${l.action}`)].join('\n');
+                const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([rows], { type: 'text/csv' })); a.download = `cdi_${new Date().toISOString().slice(0, 10)}.csv`; a.click();
+            };
+            return (
+                <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
+                    <div className="bg-white rounded-xl w-full max-w-lg mx-4 p-5 max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                        <div className="flex justify-between items-center mb-4">
+                            <h2 className="font-bold text-lg">Historique</h2>
+                            <button onClick={onClose}><Icon name="x" size={20} /></button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto space-y-1 mb-4">
+                            {logs.length === 0 ? <p className="text-center text-slate-400 py-8">Aucun mouvement</p> : [...logs].reverse().map((l, i) => (
+                                <div key={i} className={`p-2 rounded flex items-center gap-3 ${l.action === 'IN' ? 'bg-green-50' : 'bg-red-50'}`}>
+                                    <span className="text-xs text-slate-500 font-mono w-12">{new Date(l.timestamp).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>
+                                    <Icon name={l.action === 'IN' ? 'log-in' : 'log-out'} size={16} />
+                                    <span className="font-medium">{getName(l.studentId)}</span>
+                                </div>
+                            ))}
+                        </div>
+                        <button onClick={exportCSV} className="w-full py-2 bg-slate-100 rounded text-sm font-medium flex items-center justify-center gap-2"><Icon name="download" size={16} /> Exporter CSV</button>
+                    </div>
+                </div>
+            );
+        };
+
+        // Lock Screen
+        const LockScreen = ({ onUnlock, pin, count }) => {
+            const [input, setInput] = useState('');
+            const [error, setError] = useState(false);
+            const handleSubmit = () => { if (input === pin) onUnlock(); else { setError(true); setInput(''); setTimeout(() => setError(false), 500); } };
+            return (
+                <div className="fixed inset-0 bg-slate-900 flex flex-col items-center justify-center z-50">
+                    <div className="text-6xl font-bold text-white mb-2">{count}</div>
+                    <p className="text-slate-400 text-lg mb-8">Élèves Présents</p>
+                    <Clock />
+                    <div className="mt-10 bg-slate-800 p-6 rounded-xl">
+                        <p className="text-white text-center mb-4">Code PIN</p>
+                        <input type="password" value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSubmit()} className={`w-48 px-4 py-3 text-center text-2xl tracking-widest rounded-lg ${error ? 'bg-red-100' : 'bg-white'}`} maxLength={6} autoFocus />
+                        <button onClick={handleSubmit} className="w-full mt-4 py-2 bg-edu-blue text-white rounded-lg font-medium">Déverrouiller</button>
+                    </div>
+                </div>
+            );
+        };
+
+        // MAIN APP
+        function App() {
+            const [students, setStudents] = useState(() => { const s = localStorage.getItem(STORAGE.students); return s ? JSON.parse(s) : DEFAULT_STUDENTS; });
+            const [presentStudents, setPresentStudents] = useState(() => { const p = localStorage.getItem(STORAGE.present); return p ? new Set(JSON.parse(p)) : new Set(); });
+            const [logs, setLogs] = useState(() => { const l = localStorage.getItem(STORAGE.logs); return l ? JSON.parse(l) : []; });
+            const [muted, setMuted] = useState(() => localStorage.getItem(STORAGE.muted) === 'true');
+            const [pin, setPin] = useState(() => localStorage.getItem(STORAGE.pin) || DEFAULT_PIN);
+
+            const [query, setQuery] = useState('');
+            const [classFilter, setClassFilter] = useState(null);
+            const [modal, setModal] = useState(null); // 'settings' | 'history' | 'stats' | 'students'
+            const [flash, setFlash] = useState({ id: null, type: null });
+            const [toast, setToast] = useState(null);
+            const [emergency, setEmergency] = useState(false);
+            const [verified, setVerified] = useState(new Set());
+            const [locked, setLocked] = useState(false);
+            const inputRef = useRef(null);
+            const scanBuffer = useRef('');
+            const scanTimeout = useRef(null);
+
+            // Persist
+            useEffect(() => { localStorage.setItem(STORAGE.students, JSON.stringify(students)); }, [students]);
+            useEffect(() => { localStorage.setItem(STORAGE.present, JSON.stringify([...presentStudents])); }, [presentStudents]);
+            useEffect(() => { localStorage.setItem(STORAGE.logs, JSON.stringify(logs)); }, [logs]);
+            useEffect(() => { localStorage.setItem(STORAGE.muted, muted); }, [muted]);
+            useEffect(() => { if (!emergency && !locked) inputRef.current?.focus(); }, [emergency, locked, modal]);
+            useEffect(() => { if (!emergency) setVerified(new Set()); }, [emergency]);
+
+            // FASE 3.3: Class filters
+            const classGroups = useMemo(() => {
+                const groups = { 'Tous': students.length };
+                students.forEach(s => {
+                    const level = s.class.split(' ')[0];
+                    groups[level] = (groups[level] || 0) + 1;
+                });
+                return groups;
+            }, [students]);
+
+            const togglePresence = useCallback((id, fromScanner = false) => {
+                if (emergency || locked) return;
+                const student = students.find(s => s.id === id);
+                if (!student) { if (!muted) Sound.error(); return; }
+                const wasIn = presentStudents.has(id);
+                if (!wasIn && presentStudents.size >= CAPACITY) { if (!muted) Sound.error(); setToast({ message: 'Capacité max!', type: 'error' }); return; }
+                setPresentStudents(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
+                setLogs(prev => [...prev, { studentId: id, action: wasIn ? 'OUT' : 'IN', timestamp: Date.now() }]);
+                if (!muted) wasIn ? Sound.exit() : Sound.success();
+                if (fromScanner) setToast({ message: `${student.name}: ${wasIn ? 'Sorti' : 'Entré'}`, type: wasIn ? 'out' : 'in' });
+                setFlash({ id, type: wasIn ? 'out' : 'in' });
+                setTimeout(() => setFlash({ id: null, type: null }), 300);
+                setQuery(''); inputRef.current?.focus();
+            }, [emergency, locked, students, presentStudents, muted]);
+
+            // Scanner
+            useEffect(() => {
+                const handleKeyDown = (e) => {
+                    if (locked || emergency || modal) return;
+                    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+                    if (e.key === 'Enter' && scanBuffer.current.length > 0) { togglePresence(scanBuffer.current, true); scanBuffer.current = ''; return; }
+                    if (/^[A-Za-z0-9]$/.test(e.key)) { scanBuffer.current += e.key.toUpperCase(); clearTimeout(scanTimeout.current); scanTimeout.current = setTimeout(() => { scanBuffer.current = ''; }, 100); }
+                };
+                window.addEventListener('keydown', handleKeyDown);
+                return () => window.removeEventListener('keydown', handleKeyDown);
+            }, [togglePresence, locked, emergency, modal]);
+
+            // Global Keyboard Shortcuts
+            useEffect(() => {
+                const handleShortcuts = (e) => {
+                    // Esc: Close modals or clear search
+                    if (e.key === 'Escape') {
+                        if (modal) { setModal(null); e.preventDefault(); return; }
+                        if (query) { setQuery(''); setClassFilter(null); e.preventDefault(); return; }
+                    }
+
+                    // Alt+L: Lock screen
+                    if (e.altKey && e.key.toLowerCase() === 'l') {
+                        e.preventDefault();
+                        setLocked(true);
+                        return;
+                    }
+
+                    // Skip if in input/textarea (except for specific shortcuts)
+                    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+                        // Ctrl+Enter: Submit in modals (handled by modal components)
+                        return;
+                    }
+
+                    // / or Ctrl+F: Focus search
+                    if (e.key === '/' || (e.ctrlKey && e.key.toLowerCase() === 'f')) {
+                        e.preventDefault();
+                        inputRef.current?.focus();
+                        return;
+                    }
+                };
+
+                window.addEventListener('keydown', handleShortcuts);
+                return () => window.removeEventListener('keydown', handleShortcuts);
+            }, [modal, query]);
+
+            const handleImport = (data) => { setStudents(data); const valid = new Set(data.map(s => s.id)); setPresentStudents(prev => new Set([...prev].filter(id => valid.has(id)))); };
+
+            // Filter results
+            const results = useMemo(() => {
+                let list = students;
+                if (classFilter && classFilter !== 'Tous') list = list.filter(s => s.class.startsWith(classFilter));
+                if (query.length >= 2) list = list.filter(s => s.name.toLowerCase().includes(query.toLowerCase()) || s.class.toLowerCase().includes(query.toLowerCase()));
+                else if (!classFilter) list = [];
+                return list;
+            }, [students, query, classFilter]);
+
+            const presentList = students.filter(s => presentStudents.has(s.id));
+            const count = presentStudents.size;
+            const isFull = count >= CAPACITY;
+
+            if (locked) return <LockScreen onUnlock={() => setLocked(false)} pin={pin} count={count} />;
+
+            // EMERGENCY MODE
+            if (emergency) {
+                return (
+                    <div className="h-screen flex flex-col bg-black">
+                        <header className="h-14 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-6 shrink-0">
+                            <div className="flex items-center gap-3"><div className="w-10 h-10 bg-edu-red text-white rounded flex items-center justify-center"><Icon name="shield-alert" size={24} /></div><span className="font-bold text-white text-lg">MODE CONFINEMENT</span></div>
+                            <span className="font-mono text-white"><Clock /></span>
+                        </header>
+                        <div className="py-6 text-center bg-gray-900/50 border-b border-gray-800">
+                            <div className="text-8xl font-bold text-white emergency-count">{count}</div>
+                            <p className="text-xl text-gray-400 uppercase">PRÉSENTS CONFIRMÉS</p>
+                            <p className="text-green-500 mt-2">{verified.size} / {count} vérifiés</p>
+                        </div>
+                        <main className="flex-1 overflow-y-auto p-6">
+                            <div className="max-w-3xl mx-auto space-y-3">
+                                {presentList.map(s => {
+                                    const isV = verified.has(s.id);
+                                    return (<div key={s.id} onClick={() => setVerified(p => { const n = new Set(p); n.has(s.id) ? n.delete(s.id) : n.add(s.id); return n; })} className={`p-5 rounded-xl flex justify-between items-center cursor-pointer border-2 ${isV ? 'bg-green-900/30 border-green-500' : 'bg-gray-900 border-gray-700'}`}>
+                                        <div className="flex items-center gap-4">
+                                            <div className={`w-12 h-12 rounded-full flex items-center justify-center text-xl font-bold ${isV ? 'bg-green-500' : 'bg-gray-700'} text-white`}>{isV ? <Icon name="check" size={24} /> : s.name[0]}</div>
+                                            <div><div className="text-2xl font-bold text-white emergency-name">{s.name}</div><div className="text-lg text-yellow-400">{s.class}</div></div>
+                                        </div>
+                                    </div>);
+                                })}
+                            </div>
+                        </main>
+                        <footer className="h-14 bg-gray-900 border-t border-gray-800 flex items-center justify-center shrink-0">
+                            <button onClick={() => setEmergency(false)} className="px-6 py-2 bg-edu-red text-white rounded font-bold flex items-center gap-2"><Icon name="shield-off" size={18} /> DÉSACTIVER</button>
+                        </footer>
+                    </div>
+                );
+            }
+
+            // NORMAL MODE
+            return (
+                <div className="h-screen flex flex-col">
+                    {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+
+                    {/* Print Header */}
+                    <div className="print-header">
+                        <h1 style={{ fontSize: '18pt', fontWeight: 'bold' }}>Rapport Journalier - CDI</h1>
+                        <p>{new Date().toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                    </div>
+
+                    <header className="h-12 bg-white border-b flex items-center justify-between px-5 shrink-0 no-print">
+                        <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 bg-edu-blue text-white rounded flex items-center justify-center text-xs font-bold">CDI</div>
+                            <span className="font-semibold text-slate-700">SafeTrack</span>
+                            <span className="ml-2 text-xs bg-green-100 text-green-600 px-2 py-0.5 rounded flex items-center gap-1"><Icon name="scan-line" size={12} /> Scanner</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <Clock />
+                            <button onClick={() => setModal('stats')} title="Statistiques" className="w-8 h-8 rounded bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500"><Icon name="bar-chart-3" size={18} /></button>
+                            <button onClick={() => setModal('students')} title="Base Élèves" className="w-8 h-8 rounded bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500"><Icon name="users" size={18} /></button>
+                            <button onClick={() => setModal('history')} title="Historique" className="w-8 h-8 rounded bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500"><Icon name="history" size={18} /></button>
+                            <button onClick={() => setLocked(true)} title="Verrouiller (Alt+L)" className="w-8 h-8 rounded bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500"><Icon name="lock" size={18} /></button>
+                            <button onClick={() => setModal('settings')} title="Paramètres" className="w-8 h-8 rounded bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500"><Icon name="settings" size={18} /></button>
+                        </div>
+                    </header>
+
+                    <main className="flex-1 flex overflow-hidden no-print main-layout">
+                        <section className="w-1/2 bg-slate-50 border-r flex flex-col p-4 panel-left">
+                            <div className="relative mb-2 search-sticky">
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><Icon name="search" size={18} /></span>
+                                <input ref={inputRef} value={query} onChange={e => setQuery(e.target.value)} className="w-full pl-10 pr-3 py-3 border-2 rounded-lg focus:border-edu-blue outline-none" placeholder="Rechercher... (/)" />
+                            </div>
+
+                            {/* FASE 3.3: Quick Filters */}
+                            <div className="flex gap-1 mb-3 overflow-x-auto pb-1 filter-chips">
+                                {Object.entries(classGroups).map(([level, cnt]) => (
+                                    <button key={level} onClick={() => setClassFilter(classFilter === level ? null : level)}
+                                        className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap flex items-center gap-1
+                                            ${classFilter === level ? 'bg-edu-blue text-white' : 'bg-white border text-slate-600 hover:border-edu-blue'}`}>
+                                        {level} <span className="opacity-60">({cnt})</span>
+                                    </button>
+                                ))}
+                            </div>
+
+                            <div className="flex-1 overflow-y-auto space-y-1">
+                                {results.length === 0 ? (
+                                    <div className="text-center text-slate-400 mt-10"><Icon name="search" size={32} /><p className="mt-2">{query.length < 2 && !classFilter ? 'Tapez ou filtrez' : 'Aucun résultat'}</p></div>
+                                ) : results.map(s => {
+                                    const isIn = presentStudents.has(s.id);
+                                    return (<div key={s.id} onClick={() => togglePresence(s.id)} className={`p-3 rounded-lg border flex justify-between items-center cursor-pointer mobile-card ${flash.id === s.id ? (flash.type === 'in' ? 'flash-in' : 'flash-out') : ''} ${isIn ? 'bg-slate-100 opacity-50' : 'bg-white hover:border-edu-blue'}`}>
+                                        <div><span className="font-medium text-slate-800">{s.name}</span><span className="ml-2 text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded">{s.class}</span></div>
+                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center touch-target ${isIn ? 'bg-red-100 text-edu-red' : 'bg-green-100 text-green-600'}`}><Icon name={isIn ? 'log-out' : 'log-in'} size={16} /></div>
+                                    </div>);
+                                })}
+                            </div>
+                        </section>
+
+                        <section className="w-1/2 bg-white flex flex-col p-4 panel-right">
+                            <div className={`text-center mb-4 pb-4 border-b ${isFull ? 'bg-red-50 -mx-4 px-4 pt-4' : ''}`}>
+                                {isFull && <p className="text-edu-red text-sm font-semibold mb-1">⚠️ CAPACITÉ MAX</p>}
+                                <div className={`text-5xl font-bold ${isFull ? 'text-edu-red' : 'text-edu-blue'}`}>{count}</div>
+                                <div className="text-slate-400 text-sm">/ {CAPACITY}</div>
+                            </div>
+                            <div className="flex-1 overflow-y-auto space-y-1">
+                                {!presentList.length ? (
+                                    <div className="text-center text-slate-300 mt-10"><Icon name="users" size={40} /><p className="mt-2">Vide</p></div>
+                                ) : presentList.map(s => (
+                                    <div key={s.id} className={`p-3 bg-slate-50 rounded-lg flex justify-between items-center group mobile-card ${flash.id === s.id && flash.type === 'out' ? 'flash-out' : ''}`}>
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 rounded-full bg-edu-blue text-white flex items-center justify-center font-bold">{s.name[0]}</div>
+                                            <div><div className="font-semibold text-slate-800">{s.name}</div><div className="text-xs text-slate-400">{s.class}</div></div>
+                                        </div>
+                                        <button onClick={() => togglePresence(s.id)} className="text-slate-300 hover:text-edu-red opacity-0 group-hover:opacity-100 mobile-remove-btn touch-target"><Icon name="x" size={18} /></button>
+                                    </div>
+                                ))}
+                            </div>
+                        </section>
+                    </main>
+
+                    {/* Print Content */}
+                    <div className="print-only print-content" style={{ padding: '20px' }}>
+                        <h2 style={{ marginBottom: '15px' }}>Élèves Présents ({count})</h2>
+                        <table className="print-table">
+                            <thead><tr><th>Nom</th><th>Classe</th></tr></thead>
+                            <tbody>{presentList.map(s => <tr key={s.id}><td>{s.name}</td><td>{s.class}</td></tr>)}</tbody>
+                        </table>
+                    </div>
+
+                    <footer className="h-12 bg-white border-t flex items-center justify-between px-5 shrink-0 no-print">
+                        <span className="text-xs text-slate-400">v1.0.0</span>
+                        <button onClick={() => setEmergency(true)} className="flex items-center gap-2 text-sm text-slate-500 hover:text-edu-red"><Icon name="shield-alert" size={18} /> MODE CONFINEMENT</button>
+                    </footer>
+
+                    <SettingsModal open={modal === 'settings'} onClose={() => setModal(null)} onImport={handleImport}
+                        onReset={() => { setPresentStudents(new Set()); setLogs([]); }}
+                        onRestore={(data) => {
+                            setStudents(data.students);
+                            setPresentStudents(new Set(data.presentStudents));
+                            setLogs(data.logs || []);
+                            if (data.settings?.muted !== undefined) setMuted(data.settings.muted);
+                            if (data.settings?.pin) setPin(data.settings.pin);
+                        }}
+                        count={students.length} muted={muted} setMuted={setMuted} pin={pin} setPin={setPin}
+                        students={students} presentStudents={presentStudents} logs={logs} />
+                    <HistoryModal open={modal === 'history'} onClose={() => setModal(null)} logs={logs} students={students} />
+                    <StatsModal open={modal === 'stats'} onClose={() => setModal(null)} logs={logs} students={students} />
+                    <StudentManagerModal open={modal === 'students'} onClose={() => setModal(null)} students={students} setStudents={setStudents} setToast={setToast} />
+                </div>
+            );
+        }
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,10 @@
+# System files
+.DS_Store
+Thumbs.db
+*.tmp
+
+# User data (sensitive)
+Eleves.xlsx
+
+# Test files
+test.html
