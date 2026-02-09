@@ -192,59 +192,6 @@
                 font-size: 4rem !important;
             }
         }
-
-        /* FASE 6: Help FAB & Tooltips */
-        .fab-btn {
-            position: fixed;
-            bottom: 24px;
-            right: 24px;
-            width: 56px;
-            height: 56px;
-            border-radius: 50%;
-            background-color: #0055FF;
-            color: white;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: transform 0.2s, background-color 0.2s;
-            z-index: 40;
-        }
-
-        .fab-btn:hover {
-            transform: scale(1.1);
-            background-color: #0044CC;
-        }
-
-        [data-tooltip] {
-            position: relative;
-        }
-
-        [data-tooltip]:hover::after {
-            content: attr(data-tooltip);
-            position: absolute;
-            bottom: 100%;
-            left: 50%;
-            transform: translateX(-50%);
-            margin-bottom: 8px;
-            padding: 4px 8px;
-            background-color: #1e293b;
-            color: white;
-            font-size: 12px;
-            border-radius: 4px;
-            white-space: nowrap;
-            z-index: 50;
-            pointer-events: none;
-            opacity: 0;
-            animation: tooltipIn 0.2s forwards;
-        }
-
-        @keyframes tooltipIn {
-            to {
-                opacity: 1;
-                transform: translateX(-50%) translateY(-2px);
-            }
-        }
     </style>
 </head>
 
@@ -388,7 +335,13 @@
             const classColors = ['#0055FF', '#10B981', '#8B5CF6', '#F59E0B', '#EF4444', '#EC4899'];
 
             // Generate PDF Report
-            const generateReport = () => setShowReport(true);
+            const generateReport = () => {
+                setShowReport(true);
+                setTimeout(() => {
+                    window.print();
+                    setShowReport(false);
+                }, 100);
+            };
 
             // Report View (for printing)
             if (showReport) {
@@ -442,14 +395,7 @@
                                 </div>
                             </section>
                         </div>
-                        <div className="no-print fixed top-4 right-4 flex gap-2">
-                            <button onClick={() => window.print()} className="bg-blue-600 text-white px-4 py-2 rounded shadow hover:bg-blue-700 flex items-center gap-2 font-medium">
-                                <Icon name="printer" size={18} /> Imprimer / PDF
-                            </button>
-                            <button onClick={() => setShowReport(false)} className="bg-slate-500 text-white px-4 py-2 rounded shadow hover:bg-slate-600 font-medium">
-                                Fermer
-                            </button>
-                        </div>
+                        <button onClick={() => setShowReport(false)} className="no-print fixed top-4 right-4 bg-red-500 text-white px-4 py-2 rounded">Fermer</button>
                     </div>
                 );
             }
@@ -810,92 +756,60 @@
         };
 
 
-        // FASE 6: Help Modal
+        // FASE 6: Help Center Modal
         const HelpModal = ({ open, onClose }) => {
             const [tab, setTab] = useState('shortcuts'); // 'shortcuts' | 'troubleshoot' | 'support'
             if (!open) return null;
 
             return (
                 <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
-                    <div className="bg-white rounded-xl w-full max-w-lg mx-4 p-0 max-h-[80vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
-                        <div className="flex justify-between items-center p-4 border-b">
-                            <h2 className="font-bold text-lg flex items-center gap-2"><Icon name="help-circle" size={24} /> Centre d'Aide</h2>
-                            <button onClick={onClose}><Icon name="x" size={20} /></button>
+                    <div className="bg-white rounded-xl w-full max-w-lg mx-4 p-0 max-h-[85vh] flex flex-col overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
+                        <div className="flex bg-slate-100 border-b">
+                            <button onClick={() => setTab('shortcuts')} className={`flex-1 py-3 text-sm font-medium ${tab === 'shortcuts' ? 'bg-white text-edu-blue border-t-2 border-edu-blue' : 'text-slate-500 hover:text-slate-700'}`}>Raccourcis</button>
+                            <button onClick={() => setTab('troubleshoot')} className={`flex-1 py-3 text-sm font-medium ${tab === 'troubleshoot' ? 'bg-white text-edu-blue border-t-2 border-edu-blue' : 'text-slate-500 hover:text-slate-700'}`}>Dépannage</button>
+                            <button onClick={() => setTab('support')} className={`flex-1 py-3 text-sm font-medium ${tab === 'support' ? 'bg-white text-edu-blue border-t-2 border-edu-blue' : 'text-slate-500 hover:text-slate-700'}`}>Support</button>
                         </div>
 
-                        <div className="flex border-b">
-                            <button onClick={() => setTab('shortcuts')} className={`flex-1 py-3 text-sm font-medium ${tab === 'shortcuts' ? 'text-edu-blue border-b-2 border-edu-blue' : 'text-slate-500 hover:text-slate-700'}`}>Raccourcis</button>
-                            <button onClick={() => setTab('troubleshoot')} className={`flex-1 py-3 text-sm font-medium ${tab === 'troubleshoot' ? 'text-edu-blue border-b-2 border-edu-blue' : 'text-slate-500 hover:text-slate-700'}`}>Dépannage</button>
-                            <button onClick={() => setTab('support')} className={`flex-1 py-3 text-sm font-medium ${tab === 'support' ? 'text-edu-blue border-b-2 border-edu-blue' : 'text-slate-500 hover:text-slate-700'}`}>Support</button>
-                        </div>
+                        <div className="p-6 overflow-y-auto">
+                            <div className="flex justify-between items-center mb-4">
+                                <h2 className="font-bold text-xl text-slate-800">
+                                    {tab === 'shortcuts' && 'Raccourcis Clavier'}
+                                    {tab === 'troubleshoot' && 'Dépannage Rapide'}
+                                    {tab === 'support' && 'Support Technique'}
+                                </h2>
+                                <button onClick={onClose} className="p-1 rounded-full hover:bg-slate-100"><Icon name="x" size={24} /></button>
+                            </div>
 
-                        <div className="p-5 overflow-y-auto">
                             {tab === 'shortcuts' && (
-                                <div className="space-y-3">
-                                    <div className="flex justify-between items-center py-2 border-b border-dashed">
-                                        <span>Rechercher</span>
-                                        <span className="bg-slate-100 px-2 py-1 rounded text-xs font-mono border">Ctrl + F</span>
-                                    </div>
-                                    <div className="flex justify-between items-center py-2 border-b border-dashed">
-                                        <span>Focus Recherche</span>
-                                        <span className="bg-slate-100 px-2 py-1 rounded text-xs font-mono border">/</span>
-                                    </div>
-                                    <div className="flex justify-between items-center py-2 border-b border-dashed">
-                                        <span>Verrouiller l'écran</span>
-                                        <span className="bg-slate-100 px-2 py-1 rounded text-xs font-mono border">Alt + L</span>
-                                    </div>
-                                    <div className="flex justify-between items-center py-2 border-b border-dashed">
-                                        <span>Fermer fenêtre / Annuler</span>
-                                        <span className="bg-slate-100 px-2 py-1 rounded text-xs font-mono border">Esc</span>
-                                    </div>
-                                    <div className="flex justify-between items-center py-2 border-b border-dashed">
-                                        <span>Valider Scanner</span>
-                                        <span className="bg-slate-100 px-2 py-1 rounded text-xs font-mono border">Entrée</span>
-                                    </div>
+                                <div className="space-y-2">
+                                    <div className="flex justify-between items-center bg-slate-50 p-2 rounded"><span>Rechercher</span><kbd className="px-2 bg-white border rounded text-xs">/</kbd></div>
+                                    <div className="flex justify-between items-center bg-slate-50 p-2 rounded"><span>Verrouiller</span><kbd className="px-2 bg-white border rounded text-xs">Alt + L</kbd></div>
+                                    <div className="flex justify-between items-center bg-slate-50 p-2 rounded"><span>Fermer</span><kbd className="px-2 bg-white border rounded text-xs">Echap</kbd></div>
+                                    <div className="flex justify-between items-center bg-slate-50 p-2 rounded"><span>Scanner</span><span className="text-xs text-green-600">Auto-focus</span></div>
                                 </div>
                             )}
 
                             {tab === 'troubleshoot' && (
-                                <div className="space-y-4">
-                                    <div className="bg-amber-50 p-3 rounded-lg border border-amber-100">
-                                        <h3 className="font-semibold text-amber-800 text-sm mb-1">Scanner ne fonctionne pas ?</h3>
-                                        <p className="text-sm text-amber-700">Vérifiez que le clavier est en MAJUSCULES (Verr Num activé).</p>
+                                <div className="space-y-3">
+                                    <div className="p-3 bg-red-50 rounded">
+                                        <h3 className="font-semibold text-red-800 text-sm">Scanner inactif ?</h3>
+                                        <p className="text-xs text-red-600">Activez VERR NUM et cliquez dans la barre de recherche.</p>
                                     </div>
-                                    <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
-                                        <h3 className="font-semibold text-blue-800 text-sm mb-1">Pas de son ?</h3>
-                                        <p className="text-sm text-blue-700">Vérifiez le volume du PC et que l'interrupteur "Sons" dans Paramètres est activé.</p>
-                                    </div>
-                                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
-                                        <h3 className="font-semibold text-slate-800 text-sm mb-1">Données perdues ?</h3>
-                                        <p className="text-sm text-slate-700">Utilisez la fonction "Restauration" dans Paramètres si vous avez une sauvegarde récente.</p>
+                                    <div className="p-3 bg-blue-50 rounded">
+                                        <h3 className="font-semibold text-blue-800 text-sm">Bug d'affichage ?</h3>
+                                        <p className="text-xs text-blue-600">Touchez F5 pour actualiser. Données sécurisées.</p>
                                     </div>
                                 </div>
                             )}
 
                             {tab === 'support' && (
                                 <div className="text-center py-4">
-                                    <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-400">
-                                        <Icon name="headset" size={32} />
+                                    <p className="text-sm font-medium text-slate-700 mb-2">Service Informatique</p>
+                                    <div className="text-xs text-slate-500 space-y-1">
+                                        <p>support@etab.fr</p>
+                                        <p>Poste 404</p>
                                     </div>
-                                    <h3 className="font-bold text-lg mb-2">Support Informatique</h3>
-                                    <p className="text-slate-500 text-sm mb-6">Contactez l'administrateur système pour toute assistance technique avancée.</p>
-
-                                    <div className="space-y-3">
-                                        <div className="flex items-center gap-3 p-3 border rounded-lg">
-                                            <Icon name="mail" size={20} className="text-edu-blue" />
-                                            <div className="text-left">
-                                                <div className="text-xs text-slate-500">Email</div>
-                                                <div className="font-medium">support@ecole.com</div>
-                                            </div>
-                                        </div>
-                                        <div className="flex items-center gap-3 p-3 border rounded-lg">
-                                            <Icon name="phone" size={20} className="text-edu-blue" />
-                                            <div className="text-left">
-                                                <div className="text-xs text-slate-500">Téléphone</div>
-                                                <div className="font-medium">Poste 1024</div>
-                                            </div>
-                                        </div>
-                                    </div>
+                                    <p className="mt-4 text-[10px] text-slate-300">v1.0.0</p>
                                 </div>
                             )}
                         </div>
@@ -904,6 +818,7 @@
             );
         };
 
+        // Lock Screen
         const LockScreen = ({ onUnlock, pin, count }) => {
             const [input, setInput] = useState('');
             const [error, setError] = useState(false);
@@ -1086,15 +1001,15 @@
                         <div className="flex items-center gap-2">
                             <div className="w-7 h-7 bg-edu-blue text-white rounded flex items-center justify-center text-xs font-bold">CDI</div>
                             <span className="font-semibold text-slate-700">SafeTrack</span>
-                            <span className="ml-2 text-xs bg-green-100 text-green-600 px-2 py-0.5 rounded flex items-center gap-1"><Icon name="scan-line" size={12} /> Scanner</span>
                         </div>
                         <div className="flex items-center gap-2">
                             <Clock />
-                            <button onClick={() => setModal('stats')} className="w-8 h-8 rounded bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500" data-tooltip="Tableau de Bord"><Icon name="bar-chart-3" size={18} /></button>
-                            <button onClick={() => setModal('students')} className="w-8 h-8 rounded bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500" data-tooltip="Gérer Élèves"><Icon name="users" size={18} /></button>
-                            <button onClick={() => setModal('history')} className="w-8 h-8 rounded bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500" data-tooltip="Historique & CSV"><Icon name="history" size={18} /></button>
-                            <button onClick={() => setLocked(true)} className="w-8 h-8 rounded bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500" data-tooltip="Verrouiller (Alt+L)"><Icon name="lock" size={18} /></button>
-                            <button onClick={() => setModal('settings')} className="w-8 h-8 rounded bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500" data-tooltip="Configuration"><Icon name="settings" size={18} /></button>
+                            <button onClick={() => setModal('stats')} title="Statistiques" className="w-8 h-8 rounded bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500"><Icon name="bar-chart-3" size={18} /></button>
+                            <button onClick={() => setModal('students')} title="Base Élèves" className="w-8 h-8 rounded bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500"><Icon name="users" size={18} /></button>
+                            <button onClick={() => setModal('history')} title="Historique" className="w-8 h-8 rounded bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500"><Icon name="history" size={18} /></button>
+                            <button onClick={() => setModal('help')} title="Aide & Support" className="w-8 h-8 rounded bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500"><Icon name="help-circle" size={18} /></button>
+                            <button onClick={() => setLocked(true)} title="Verrouiller (Alt+L)" className="w-8 h-8 rounded bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500"><Icon name="lock" size={18} /></button>
+                            <button onClick={() => setModal('settings')} title="Paramètres" className="w-8 h-8 rounded bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500"><Icon name="settings" size={18} /></button>
                         </div>
                     </header>
 
@@ -1166,9 +1081,6 @@
                     </footer>
 
 
-                    <button onClick={() => setModal('help')} className="fab-btn no-print" data-tooltip="Aide & Support">
-                        <Icon name="help-circle" size={28} />
-                    </button>
 
                     <SettingsModal open={modal === 'settings'} onClose={() => setModal(null)} onImport={handleImport}
                         onReset={() => { setPresentStudents(new Set()); setLogs([]); }}
