@@ -96,10 +96,7 @@
                 display: block !important;
             }
 
-            * {
-                color: black !important;
-                background: white !important;
-            }
+
 
             .print-table {
                 width: 100%;
@@ -221,19 +218,48 @@
         };
         const Sound = { success: () => playBeep(880, 0.15), exit: () => playBeep(440, 0.2), error: () => { playBeep(220, 0.1, 'square'); setTimeout(() => playBeep(220, 0.1, 'square'), 120); } };
 
-        // Icon Component - Using Lucide's createElement
+        // Error Boundary
+        class ErrorBoundary extends React.Component {
+            constructor(props) { super(props); this.state = { hasError: false, error: null }; }
+            static getDerivedStateFromError(error) { return { hasError: true, error }; }
+            componentDidCatch(error, errorInfo) { console.error("Uncaught error:", error, errorInfo); }
+            render() {
+                if (this.state.hasError) {
+                    return (
+                        <div className="p-8 text-center">
+                            <h1 className="text-2xl font-bold text-red-600 mb-4">Une erreur est survenue</h1>
+                            <p className="mb-4 text-slate-600">L'application a rencontré un problème inattendu.</p>
+                            <pre className="bg-slate-100 p-4 rounded text-left text-xs text-red-500 overflow-auto mb-4 font-mono border border-red-200">
+                                {this.state.error && this.state.error.toString()}
+                            </pre>
+                            <button onClick={() => window.location.reload()} className="px-4 py-2 bg-edu-blue text-white rounded hover:bg-blue-600 transition-colors">
+                                Recharger la page
+                            </button>
+                        </div>
+                    );
+                }
+                return this.props.children;
+            }
+        }
+
         const Icon = ({ name, size = 20 }) => {
             const ref = useRef(null);
             useEffect(() => {
-                if (ref.current) {
+                if (ref.current && name) {
                     ref.current.innerHTML = '';
-                    // Convert kebab-case to PascalCase for lucide
-                    const pascalName = name.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join('');
-                    if (lucide[pascalName]) {
-                        const svg = lucide.createElement(lucide[pascalName]);
-                        svg.setAttribute('width', size);
-                        svg.setAttribute('height', size);
-                        ref.current.appendChild(svg);
+                    try {
+                        const parts = name.split('-');
+                        const pascalName = parts.map(word => word.charAt(0).toUpperCase() + word.slice(1)).join('');
+                        if (lucide[pascalName]) {
+                            const svg = lucide.createElement(lucide[pascalName]);
+                            svg.setAttribute('width', size);
+                            svg.setAttribute('height', size);
+                            ref.current.appendChild(svg);
+                        } else {
+                            console.warn(`Icon ${name} (${pascalName}) not found`);
+                        }
+                    } catch (e) {
+                        console.error("Icon render error:", e);
                     }
                 }
             }, [name, size]);
@@ -255,7 +281,7 @@
         const StatsModal = ({ open, onClose, logs, students }) => {
             const [timeRange, setTimeRange] = useState('week'); // 'week' or 'month'
             const [showReport, setShowReport] = useState(false);
-            if (!open) return null;
+
 
             // Filter logs by time range
             const filteredLogs = useMemo(() => {
@@ -295,7 +321,7 @@
                 filteredLogs.filter(l => l.action === 'IN').forEach(l => {
                     const s = students.find(st => st.id === l.studentId);
                     if (s) {
-                        const level = s.class.split(' ')[0]; // Get "2nde", "1ère", "Terminale"
+                        const level = (s.class && typeof s.class === 'string') ? s.class.split(' ')[0] : 'Inconnu'; // Get "2nde", "1ère", "Terminale"
                         counts[level] = (counts[level] || 0) + 1;
                     }
                 });
@@ -331,8 +357,15 @@
             // Top class
             const topClass = classDistribution[0]?.name || '-';
 
+            // Smart Analysis
+            const peakDayIndex = Object.keys(dayCounts).reduce((a, b) => dayCounts[a] > dayCounts[b] ? a : b, 1);
+            const peakDayName = dayNames[peakDayIndex];
+            const peakHourTime = Object.keys(hourCounts).reduce((a, b) => hourCounts[a] > hourCounts[b] ? a : b, 8);
+
             // Colors for class bars
             const classColors = ['#0055FF', '#10B981', '#8B5CF6', '#F59E0B', '#EF4444', '#EC4899'];
+
+            if (!open) return null;
 
             // Generate PDF Report
             const generateReport = () => {
@@ -347,7 +380,7 @@
             if (showReport) {
                 return (
                     <div className="fixed inset-0 bg-white z-50 p-8 overflow-auto" id="report-view">
-                        <style>{`@media print { body * { visibility: hidden; } #report-view, #report-view * { visibility: visible; } #report-view { position: absolute; left: 0; top: 0; width: 100%; } .no-print { display: none !important; } }`}</style>
+                        <style>{`@media print { body * { visibility: hidden; } #report-view, #report-view * { visibility: visible; } #report-view { position: absolute; left: 0; top: 0; width: 100%; -webkit-print-color-adjust: exact; print-color-adjust: exact; } .no-print { display: none !important; } }`}</style>
                         <div className="max-w-3xl mx-auto">
                             <header className="text-center border-b-2 pb-4 mb-6">
                                 <h1 className="text-2xl font-bold">CDI - Rapport de Fréquentation</h1>
@@ -364,28 +397,40 @@
                                 </div>
                             </section>
 
+                            <section className="mb-6 bg-slate-50 p-4 rounded border">
+                                <h2 className="font-bold text-lg border-b pb-2 mb-2">Analyse de l'Activité</h2>
+                                <p className="text-slate-800">
+                                    Le pic d'affluence est observé le <strong>{peakDayName}</strong> vers <strong>{peakHourTime}h</strong>.
+                                    Les élèves de <strong>{topClass}</strong> sont les plus fréquents au CDI.
+                                </p>
+                            </section>
+
                             <section className="mb-6">
                                 <h2 className="font-bold text-lg border-b pb-2 mb-3">Fréquentation par Jour</h2>
-                                <table className="w-full border-collapse">
-                                    <thead><tr className="bg-gray-100"><th className="border p-2 text-left">Jour</th><th className="border p-2 text-right">Entrées</th></tr></thead>
-                                    <tbody>
-                                        {Object.entries(dayNames).map(([d, name]) => (
-                                            <tr key={d}><td className="border p-2">{name}</td><td className="border p-2 text-right">{dayCounts[d] || 0}</td></tr>
-                                        ))}
-                                    </tbody>
-                                </table>
+                                <div className="flex items-end gap-4 h-40 border-b pb-2 mb-4">
+                                    {Object.entries(dayNames).map(([d, name]) => (
+                                        <div key={d} className="flex-1 flex flex-col items-center">
+                                            <div className="text-xs font-bold text-slate-600 mb-1">{dayCounts[d] || 0}</div>
+                                            <div className="w-full bg-edu-blue rounded-t border border-blue-700" style={{ height: `${(dayCounts[d] || 0) / maxDay * 100}%`, minHeight: '2px', backgroundColor: '#0055FF' }}></div>
+                                            <span className="text-sm text-slate-800 mt-1 font-medium">{name}</span>
+                                        </div>
+                                    ))}
+                                </div>
                             </section>
 
                             <section className="mb-6">
                                 <h2 className="font-bold text-lg border-b pb-2 mb-3">Répartition par Niveau</h2>
-                                <table className="w-full border-collapse">
-                                    <thead><tr className="bg-gray-100"><th className="border p-2 text-left">Niveau</th><th className="border p-2 text-right">Visites</th><th className="border p-2 text-right">%</th></tr></thead>
-                                    <tbody>
-                                        {classDistribution.map(c => (
-                                            <tr key={c.name}><td className="border p-2">{c.name}</td><td className="border p-2 text-right">{c.count}</td><td className="border p-2 text-right">{c.percent}%</td></tr>
-                                        ))}
-                                    </tbody>
-                                </table>
+                                <div className="space-y-4">
+                                    {classDistribution.map((c, i) => (
+                                        <div key={c.name} className="flex items-center gap-3">
+                                            <span className="w-24 text-sm font-bold text-slate-800">{c.name}</span>
+                                            <div className="flex-1 h-6 bg-slate-100 rounded-full overflow-hidden border border-slate-300">
+                                                <div className="h-full rounded-full" style={{ width: `${c.percent}%`, backgroundColor: classColors[i % classColors.length], printColorAdjust: 'exact', WebkitPrintColorAdjust: 'exact' }}></div>
+                                            </div>
+                                            <span className="w-20 text-sm text-right text-slate-800 font-medium">{c.percent}% ({c.count})</span>
+                                        </div>
+                                    ))}
+                                </div>
                             </section>
 
                             <section className="mt-12 pt-8 border-t">
@@ -442,6 +487,18 @@
                                     <div className="bg-purple-50 rounded-xl p-3 text-center">
                                         <div className="text-lg font-bold text-purple-600">{topClass}</div>
                                         <div className="text-xs text-slate-500">Top classe</div>
+                                    </div>
+                                </div>
+
+                                {/* Smart Summary Banner */}
+                                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6 flex items-start gap-3">
+                                    <div className="bg-amber-100 p-2 rounded-full text-amber-600"><Icon name="lightbulb" size={20} /></div>
+                                    <div>
+                                        <h3 className="font-bold text-amber-800 text-sm mb-1">Analyse de l'Activité</h3>
+                                        <p className="text-sm text-amber-900">
+                                            Le pic d'affluence est observé le <strong>{peakDayName}</strong> vers <strong>{peakHourTime}h</strong>.
+                                            Les élèves de <strong>{topClass}</strong> sont les plus fréquents au CDI.
+                                        </p>
                                     </div>
                                 </div>
 
@@ -585,8 +642,29 @@
             );
         };
 
+        // Crypto Helper (Global)
+        const SimpleCrypto = {
+            encrypt: (text, pass) => {
+                let result = '';
+                for (let i = 0; i < text.length; i++) {
+                    result += String.fromCharCode(text.charCodeAt(i) ^ pass.charCodeAt(i % pass.length));
+                }
+                return btoa(result);
+            },
+            decrypt: (text, pass) => {
+                try {
+                    let result = '';
+                    const decoded = atob(text);
+                    for (let i = 0; i < decoded.length; i++) {
+                        result += String.fromCharCode(decoded.charCodeAt(i) ^ pass.charCodeAt(i % pass.length));
+                    }
+                    return result;
+                } catch (e) { return null; }
+            }
+        };
+
         // Settings Modal
-        const SettingsModal = ({ open, onClose, onImport, onReset, onRestore, count, muted, setMuted, pin, setPin, students, presentStudents, logs }) => {
+        const SettingsModal = ({ open, onClose, onImport, onReset, onRestore, onExport, count, muted, setMuted, pin, setPin, encryptBackup, setEncryptBackup, backupTime, setBackupTime, students, presentStudents, logs }) => {
             const [text, setText] = useState('');
             const [newPin, setNewPin] = useState(pin);
             const fileInputRef = useRef(null);
@@ -605,23 +683,6 @@
                 return data;
             };
 
-            // Full backup export
-            const exportBackup = () => {
-                const backup = {
-                    version: '1.0',
-                    timestamp: new Date().toISOString(),
-                    students: students,
-                    presentStudents: [...presentStudents],
-                    logs: logs,
-                    settings: { muted, pin }
-                };
-                const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
-                const a = document.createElement('a');
-                a.href = URL.createObjectURL(blob);
-                a.download = `cdi_backup_${new Date().toISOString().slice(0, 10)}.json`;
-                a.click();
-            };
-
             // Restore from backup
             const handleRestore = (e) => {
                 const file = e.target.files[0];
@@ -629,7 +690,18 @@
                 const reader = new FileReader();
                 reader.onload = (ev) => {
                     try {
-                        const data = JSON.parse(ev.target.result);
+                        let content = ev.target.result;
+
+                        // Check for encryption
+                        if (content.startsWith("ENC:")) {
+                            const pass = prompt("🔐 Fichier chiffré. Entrez le mot de passe :");
+                            if (!pass) return;
+                            const decrypted = SimpleCrypto.decrypt(content.slice(4), pass);
+                            if (!decrypted) { alert("Mot de passe incorrect ou fichier corrompu."); return; }
+                            content = decrypted;
+                        }
+
+                        const data = JSON.parse(content);
                         if (!data.students || !data.presentStudents) {
                             alert('Format de sauvegarde invalide');
                             return;
@@ -637,8 +709,9 @@
                         if (!confirm('⚠️ Ceci va remplacer toutes les données actuelles. Continuer?')) return;
                         onRestore(data);
                         onClose();
-                    } catch {
-                        alert('Erreur de lecture du fichier');
+                    } catch (err) {
+                        console.error(err);
+                        alert('Erreur de lecture du fichier : ' + err.message);
                     }
                 };
                 reader.readAsText(file);
@@ -647,11 +720,27 @@
 
             return (
                 <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
-                    <div className="bg-white rounded-xl w-full max-w-md mx-4 p-5 max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                    <div className="bg-white rounded-xl w-full max-w-md mx-4 p-5 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
                         <div className="flex justify-between items-center mb-4">
                             <h2 className="font-bold text-lg">Paramètres</h2>
                             <button onClick={onClose}><Icon name="x" size={20} /></button>
                         </div>
+
+                        {/* Security Settings */}
+                        <div className="py-3 border-b bg-amber-50 rounded px-3 mb-2">
+                            <h3 className="font-bold text-sm text-amber-800 mb-2 flex items-center gap-2"><Icon name="shield" size={16} /> Sécurité & Sauvegardes</h3>
+                            <div className="flex items-center justify-between mb-2">
+                                <label className="text-sm font-medium text-amber-900">Chiffrer les backups</label>
+                                <button onClick={() => setEncryptBackup(!encryptBackup)} className={`w-10 h-6 rounded-full relative ${encryptBackup ? 'bg-amber-500' : 'bg-slate-300'}`}>
+                                    <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 shadow transition-all ${encryptBackup ? 'left-4.5' : 'left-0.5'}`}></div>
+                                </button>
+                            </div>
+                            <div className="flex items-center justify-between">
+                                <label className="text-sm font-medium text-amber-900">Heure Auto-Backup</label>
+                                <input type="time" value={backupTime} onChange={e => setBackupTime(e.target.value)} className="border rounded px-2 py-1 text-sm bg-white" />
+                            </div>
+                        </div>
+
                         <div className="flex items-center justify-between py-3 border-b">
                             <span className="font-medium">Sons</span>
                             <button onClick={() => setMuted(!muted)} className={`w-10 h-6 rounded-full relative ${muted ? 'bg-slate-300' : 'bg-green-500'}`}>
@@ -661,7 +750,7 @@
                         <div className="py-3 border-b">
                             <label className="text-sm font-medium">Code PIN</label>
                             <input type="password" value={newPin} onChange={e => setNewPin(e.target.value)} className="w-full mt-1 px-3 py-2 border rounded text-center tracking-widest" maxLength={6} />
-                            <button onClick={() => { setPin(newPin); localStorage.setItem(STORAGE.pin, newPin); }} className="mt-2 text-sm text-edu-blue">Sauvegarder</button>
+                            <button onClick={() => { setPin(newPin); localStorage.setItem('cdi_pin', newPin); }} className="mt-2 text-sm text-edu-blue">Sauvegarder</button>
                         </div>
                         <div className="py-3 border-b">
                             <label className="text-sm font-medium">Importer élèves (Excel/CSV)</label>
@@ -705,7 +794,7 @@
                         <div className="py-3 border-b">
                             <label className="text-sm font-medium flex items-center gap-2"><Icon name="database" size={16} /> Sauvegarde Système</label>
                             <div className="flex gap-2 mt-2">
-                                <button onClick={exportBackup} className="flex-1 py-2 bg-green-50 text-green-700 rounded text-sm flex items-center justify-center gap-1">
+                                <button onClick={onExport} className="flex-1 py-2 bg-green-50 text-green-700 rounded text-sm flex items-center justify-center gap-1">
                                     <Icon name="download" size={16} /> Exporter
                                 </button>
                                 <button onClick={() => fileInputRef.current?.click()} className="flex-1 py-2 bg-blue-50 text-edu-blue rounded text-sm flex items-center justify-center gap-1">
@@ -838,12 +927,42 @@
         };
 
         // MAIN APP
+        const API_URL = "http://localhost:8081/api";
+
         function App() {
-            const [students, setStudents] = useState(() => { const s = localStorage.getItem(STORAGE.students); return s ? JSON.parse(s) : DEFAULT_STUDENTS; });
-            const [presentStudents, setPresentStudents] = useState(() => { const p = localStorage.getItem(STORAGE.present); return p ? new Set(JSON.parse(p)) : new Set(); });
+            // API State
+            const [students, setStudents] = useState([]);
+            const [presentStudents, setPresentStudents] = useState(new Set());
+            const [serverOnline, setServerOnline] = useState(true);
+            const [loading, setLoading] = useState(true);
+
+            // Fetch Data on Load
+            useEffect(() => {
+                const init = async () => {
+                    try {
+                        const res = await fetch(`${API_URL}/students`);
+                        if (!res.ok) throw new Error("API Error");
+                        const data = await res.json();
+                        setStudents(data);
+                        setPresentStudents(new Set(data.filter(s => s.present).map(s => s.id)));
+                        setServerOnline(true);
+                    } catch (e) {
+                        console.error(e);
+                        setServerOnline(false);
+                        setToast({ message: "⚠️ SERVEUR HORS LIGNE", type: "error" });
+                    } finally { setLoading(false); }
+                };
+                init();
+            }, []);
             const [logs, setLogs] = useState(() => { const l = localStorage.getItem(STORAGE.logs); return l ? JSON.parse(l) : []; });
             const [muted, setMuted] = useState(() => localStorage.getItem(STORAGE.muted) === 'true');
             const [pin, setPin] = useState(() => localStorage.getItem(STORAGE.pin) || DEFAULT_PIN);
+
+            // Security & Settings
+            const [encryptBackup, setEncryptBackup] = useState(() => localStorage.getItem('cdi_encrypt') === 'true');
+            const [backupTime, setBackupTime] = useState(() => localStorage.getItem('cdi_backup_time') || '16:45');
+            const [lastBackup, setLastBackup] = useState(() => localStorage.getItem('cdi_last_backup') || '');
+            const [unsavedChanges, setUnsavedChanges] = useState(false);
 
             const [query, setQuery] = useState('');
             const [classFilter, setClassFilter] = useState(null);
@@ -857,38 +976,157 @@
             const scanBuffer = useRef('');
             const scanTimeout = useRef(null);
 
-            // Persist
-            useEffect(() => { localStorage.setItem(STORAGE.students, JSON.stringify(students)); }, [students]);
-            useEffect(() => { localStorage.setItem(STORAGE.present, JSON.stringify([...presentStudents])); }, [presentStudents]);
-            useEffect(() => { localStorage.setItem(STORAGE.logs, JSON.stringify(logs)); }, [logs]);
+            // Simple Crypto Helper
+            const simpleCrypto = {
+                encrypt: (text, pass) => {
+                    let result = '';
+                    for (let i = 0; i < text.length; i++) {
+                        result += String.fromCharCode(text.charCodeAt(i) ^ pass.charCodeAt(i % pass.length));
+                    }
+                    return btoa(result);
+                },
+                decrypt: (text, pass) => {
+                    try {
+                        let result = '';
+                        const decoded = atob(text);
+                        for (let i = 0; i < decoded.length; i++) {
+                            result += String.fromCharCode(decoded.charCodeAt(i) ^ pass.charCodeAt(i % pass.length));
+                        }
+                        return result;
+                    } catch (e) { return null; }
+                }
+            };
+
+            // Persist & Unsaved Changes Logic
+            // Persist (Only Logs & Settings now)
+            useEffect(() => { localStorage.setItem(STORAGE.logs, JSON.stringify(logs)); setUnsavedChanges(true); }, [logs]);
             useEffect(() => { localStorage.setItem(STORAGE.muted, muted); }, [muted]);
+            useEffect(() => { localStorage.setItem('cdi_encrypt', encryptBackup); }, [encryptBackup]);
+            useEffect(() => { localStorage.setItem('cdi_backup_time', backupTime); }, [backupTime]);
+            useEffect(() => { if (lastBackup) localStorage.setItem('cdi_last_backup', lastBackup); }, [lastBackup]);
+
             useEffect(() => { if (!emergency && !locked) inputRef.current?.focus(); }, [emergency, locked, modal]);
             useEffect(() => { if (!emergency) setVerified(new Set()); }, [emergency]);
+
+            // Unsaved Changes Guard
+            useEffect(() => {
+                const handleBeforeUnload = (e) => {
+                    if (unsavedChanges) {
+                        e.preventDefault();
+                        e.returnValue = '';
+                    }
+                };
+                window.addEventListener('beforeunload', handleBeforeUnload);
+                return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+            }, [unsavedChanges]);
+
+            // Export Backup Logic (Moved to App)
+            const exportBackup = useCallback((silent = false) => {
+                let password = null;
+                if (encryptBackup && !silent) {
+                    password = prompt("🔐 Définir un mot de passe pour cette sauvegarde (optionnel mais recommandé):");
+                    if (password === null) return; // Cancelled
+                }
+
+                const data = {
+                    version: '1.0',
+                    timestamp: new Date().toISOString(),
+                    students: students,
+                    presentStudents: [...presentStudents],
+                    logs: logs,
+                    settings: { muted, pin, encryptBackup, backupTime },
+                    encrypted: !!password
+                };
+
+                let content = JSON.stringify(data, null, 2);
+                if (password) {
+                    content = simpleCrypto.encrypt(content, password);
+                    content = "ENC:" + content; // Prefix to identify encrypted file
+                }
+
+                const blob = new Blob([content], { type: 'application/json' });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = `cdi_backup_${new Date().toISOString().slice(0, 10)}${password ? '_secure' : ''}.json`;
+                document.body.appendChild(a); // Req for firefox
+                a.click();
+                document.body.removeChild(a);
+
+                const today = new Date().toISOString().slice(0, 10);
+                setLastBackup(today);
+                setUnsavedChanges(false);
+
+                if (!silent) setToast({ message: 'Sauvegarde effectuée !', type: 'success' });
+            }, [students, presentStudents, logs, muted, pin, encryptBackup, backupTime]);
+
+            // Auto-Backup Scheduler
+            useEffect(() => {
+                const checkBackup = () => {
+                    const now = new Date();
+                    const timeStr = now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+                    const today = now.toISOString().slice(0, 10);
+
+                    if (timeStr === backupTime && lastBackup !== today) {
+                        setToast({ message: '⏳ Sauvegarde automatique...', type: 'in' });
+                        exportBackup(true); // silent mode
+                    }
+                };
+                const interval = setInterval(checkBackup, 60000); // Check every minute
+                return () => clearInterval(interval);
+            }, [backupTime, lastBackup, exportBackup]);
 
             // FASE 3.3: Class filters
             const classGroups = useMemo(() => {
                 const groups = { 'Tous': students.length };
                 students.forEach(s => {
-                    const level = s.class.split(' ')[0];
+                    const level = (s.class && typeof s.class === 'string') ? s.class.split(' ')[0] : 'Inconnu';
                     groups[level] = (groups[level] || 0) + 1;
                 });
                 return groups;
             }, [students]);
 
-            const togglePresence = useCallback((id, fromScanner = false) => {
-                if (emergency || locked) return;
-                const student = students.find(s => s.id === id);
-                if (!student) { if (!muted) Sound.error(); return; }
-                const wasIn = presentStudents.has(id);
-                if (!wasIn && presentStudents.size >= CAPACITY) { if (!muted) Sound.error(); setToast({ message: 'Capacité max!', type: 'error' }); return; }
-                setPresentStudents(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
-                setLogs(prev => [...prev, { studentId: id, action: wasIn ? 'OUT' : 'IN', timestamp: Date.now() }]);
-                if (!muted) wasIn ? Sound.exit() : Sound.success();
-                if (fromScanner) setToast({ message: `${student.name}: ${wasIn ? 'Sorti' : 'Entré'}`, type: wasIn ? 'out' : 'in' });
-                setFlash({ id, type: wasIn ? 'out' : 'in' });
-                setTimeout(() => setFlash({ id: null, type: null }), 300);
+            const togglePresence = useCallback(async (id, fromScanner = false) => {
+                if (emergency || locked || !serverOnline) return;
+
+                try {
+                    const res = await fetch(`${API_URL}/scan/${id}`, { method: 'POST' });
+                    if (res.status === 404) {
+                        if (!muted) { const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2572/2572-preview.mp3'); audio.play().catch(() => { }); }
+                        setToast({ message: 'Carte inconnue', type: 'error' });
+                        return;
+                    }
+                    if (!res.ok) throw new Error('Server Error');
+
+                    const updated = await res.json();
+                    setStudents(prev => prev.map(s => s.id === updated.id ? updated : s));
+
+                    const wasIn = !updated.present; // If it *was* in, now it is present=false? No, wait.
+                    // Backend toggles. If returned student.present is true, they JUST ENTERED.
+                    // So they WERE OUT.
+
+                    const isEntering = updated.present;
+                    setPresentStudents(prev => { const next = new Set(prev); isEntering ? next.add(updated.id) : next.delete(updated.id); return next; });
+
+                    const studentName = updated.firstName ? `${updated.firstName} ${updated.lastName}` : (updated.name || 'Élève');
+
+                    setLogs(prev => [...prev, { studentId: updated.id, action: isEntering ? 'IN' : 'OUT', timestamp: Date.now() }]);
+
+                    if (!muted) {
+                        const audio = new Audio(isEntering ? 'https://assets.mixkit.co/active_storage/sfx/2578/2578-preview.mp3' : 'https://assets.mixkit.co/active_storage/sfx/2578/2578-preview.mp3');
+                        if (!isEntering) audio.playbackRate = 0.8;
+                        audio.play().catch(() => { });
+                    }
+
+                    if (fromScanner) setToast({ message: `${studentName}: ${isEntering ? 'Entré' : 'Sorti'}`, type: isEntering ? 'in' : 'out' });
+                    setFlash({ id: updated.id, type: isEntering ? 'in' : 'out' });
+                    setTimeout(() => setFlash({ id: null, type: null }), 300);
+
+                } catch (err) {
+                    console.error(err);
+                    setToast({ message: "Erreur serveur", type: "error" });
+                }
                 setQuery(''); inputRef.current?.focus();
-            }, [emergency, locked, students, presentStudents, muted]);
+            }, [emergency, locked, students, presentStudents, muted, serverOnline]);
 
             // Scanner
             useEffect(() => {
@@ -966,7 +1204,7 @@
                             <p className="text-xl text-gray-400 uppercase">PRÉSENTS CONFIRMÉS</p>
                             <p className="text-green-500 mt-2">{verified.size} / {count} vérifiés</p>
                         </div>
-                        <main className="flex-1 overflow-y-auto p-6">
+                        <main className="flex-1 overflow-y-auto p-6 no-print">
                             <div className="max-w-3xl mx-auto space-y-3">
                                 {presentList.map(s => {
                                     const isV = verified.has(s.id);
@@ -979,8 +1217,32 @@
                                 })}
                             </div>
                         </main>
-                        <footer className="h-14 bg-gray-900 border-t border-gray-800 flex items-center justify-center shrink-0">
-                            <button onClick={() => setEmergency(false)} className="px-6 py-2 bg-edu-red text-white rounded font-bold flex items-center gap-2"><Icon name="shield-off" size={18} /> DÉSACTIVER</button>
+
+                        {/* Printable Emergency List */}
+                        <div className="print-only p-8 bg-white text-black">
+                            <h1 className="text-3xl font-bold mb-2">URGENCE - LISTE D'APPEL</h1>
+                            <p className="mb-6 text-xl">Total Présents: <strong>{count}</strong> | Vérifiés: <strong>{verified.size}</strong></p>
+                            <table className="w-full text-left border-collapse">
+                                <thead><tr className="border-b-2 border-black"><th className="p-2 text-xl">Nom</th><th className="p-2 text-xl">Classe</th><th className="p-2 text-xl">Statut</th></tr></thead>
+                                <tbody>
+                                    {presentList.map(s => (
+                                        <tr key={s.id} className="border-b border-gray-300">
+                                            <td className="p-3 text-lg font-bold">{s.name}</td>
+                                            <td className="p-3 text-lg">{s.class}</td>
+                                            <td className="p-3 text-lg">{verified.has(s.id) ? '✅ VÉRIFIÉ' : '⬜ À VÉRIFIER'}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                            <div className="mt-8 pt-8 border-t-2 border-black flex justify-between">
+                                <div><p>Heure du rapport:</p><p className="font-bold text-xl">{new Date().toLocaleTimeString()}</p></div>
+                                <div><p>Signature Responsable:</p><div className="h-12 w-48 border-b border-black"></div></div>
+                            </div>
+                        </div>
+
+                        <footer className="h-14 bg-gray-900 border-t border-gray-800 flex items-center justify-center shrink-0 gap-4 no-print">
+                            <button onClick={() => window.print()} className="px-6 py-2 bg-slate-700 text-white rounded font-bold flex items-center gap-2 hover:bg-slate-600"><Icon name="printer" size={18} /> IMPRIMER LISTE</button>
+                            <button onClick={() => setEmergency(false)} className="px-6 py-2 bg-edu-red text-white rounded font-bold flex items-center gap-2 hover:bg-red-600"><Icon name="shield-off" size={18} /> DÉSACTIVER</button>
                         </footer>
                     </div>
                 );
@@ -989,6 +1251,7 @@
             // NORMAL MODE
             return (
                 <div className="h-screen flex flex-col">
+                    {!serverOnline && <div className="bg-red-600 text-white text-center py-2 font-bold flex justify-center items-center gap-2 no-print"><Icon name="wifi-off" size={20} /> SERVEUR HORS LIGNE - SCANNER DÉSACTIVÉ <button onClick={() => window.location.reload()} className="underline text-sm ml-2">Réessayer</button></div>}
                     {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
 
                     {/* Print Header */}
@@ -1075,9 +1338,14 @@
                         </table>
                     </div>
 
-                    <footer className="h-12 bg-white border-t flex items-center justify-between px-5 shrink-0 no-print">
-                        <span className="text-xs text-slate-400">v1.0.0</span>
-                        <button onClick={() => setEmergency(true)} className="flex items-center gap-2 text-sm text-slate-500 hover:text-edu-red"><Icon name="shield-alert" size={18} /> MODE CONFINEMENT</button>
+                    <footer className="h-14 bg-white border-t flex items-center justify-between px-5 shrink-0 no-print">
+                        <div className="flex flex-col text-xs text-slate-400">
+                            <span>© 2026 SafeTrack. Tous droits réservés.</span>
+                            <span>Developed with <span className="text-red-500">♥</span> by <a href="https://www.linkedin.com/in/sam-magbo-02086555/" target="_blank" rel="noopener noreferrer" className="font-bold text-slate-600 hover:text-edu-blue hover:underline">Magbo Studio</a></span>
+                        </div>
+                        <button onClick={() => setEmergency(true)} className="flex items-center gap-2 text-sm text-slate-500 hover:text-edu-red bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200 transition-colors">
+                            <Icon name="shield-alert" size={16} /> <span className="font-semibold">MODE URGENCE</span>
+                        </button>
                     </footer>
 
 
@@ -1090,8 +1358,13 @@
                             setLogs(data.logs || []);
                             if (data.settings?.muted !== undefined) setMuted(data.settings.muted);
                             if (data.settings?.pin) setPin(data.settings.pin);
+                            if (data.settings?.encryptBackup !== undefined) setEncryptBackup(data.settings.encryptBackup);
+                            if (data.settings?.backupTime) setBackupTime(data.settings.backupTime);
                         }}
+                        onExport={() => exportBackup()}
                         count={students.length} muted={muted} setMuted={setMuted} pin={pin} setPin={setPin}
+                        encryptBackup={encryptBackup} setEncryptBackup={setEncryptBackup}
+                        backupTime={backupTime} setBackupTime={setBackupTime}
                         students={students} presentStudents={presentStudents} logs={logs} />
                     <HistoryModal open={modal === 'history'} onClose={() => setModal(null)} logs={logs} students={students} />
                     <StatsModal open={modal === 'stats'} onClose={() => setModal(null)} logs={logs} students={students} />
@@ -1101,7 +1374,7 @@
             );
         }
 
-        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+        ReactDOM.createRoot(document.getElementById('root')).render(<ErrorBoundary><App /></ErrorBoundary>);
     </script>
 </body>
 

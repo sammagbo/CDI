@@ -8,3 +8,16 @@ Eleves.xlsx
 
 # Test files
 test.html
+
+# Java / Maven
+target/
+*.class
+*.jar
+*.war
+*.ear
+*.log
+
+# IDE
+.idea/
+*.iml
+.vscode/
