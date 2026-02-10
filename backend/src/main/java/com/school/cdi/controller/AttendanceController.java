@@ -32,6 +32,9 @@ public class AttendanceController {
 
     @PostMapping("/students")
     public ResponseEntity<Student> addStudent(@RequestBody Student student) {
+        if (student.getId() == null || student.getId().isBlank()) {
+            return ResponseEntity.badRequest().build();
+        }
         if (studentRepository.existsById(student.getId())) {
             return ResponseEntity.badRequest().build();
         }
@@ -59,6 +62,9 @@ public class AttendanceController {
 
     @PutMapping("/students/{id}")
     public ResponseEntity<Student> updateStudent(@PathVariable String id, @RequestBody Student student) {
+        if (id == null || id.isBlank()) {
+            return ResponseEntity.badRequest().build();
+        }
         if (!studentRepository.existsById(id)) {
             return ResponseEntity.notFound().build();
         }
