@@ -205,6 +205,7 @@
         const CAPACITY = 50;
         const STORAGE = { students: 'cdi_students', present: 'cdi_present', logs: 'cdi_logs', muted: 'cdi_muted', pin: 'cdi_pin' };
         const DEFAULT_PIN = '1234';
+        const API_URL = "http://localhost:8081/api";
 
         // Audio
         const audioCtx = { ctx: null };
@@ -562,7 +563,7 @@
             );
         };
 
-        // FASE 3.2: Student Management Modal
+        // FASE 3.2: Student Management Modal (API INTEGRATED)
         const StudentManagerModal = ({ open, onClose, students, setStudents, setToast }) => {
             const [newStudent, setNewStudent] = useState({ name: '', class: '', id: '' });
             const [editing, setEditing] = useState(null);
@@ -570,24 +571,92 @@
 
             const generateId = () => 'E' + String(Math.max(...students.map(s => parseInt(s.id.slice(1)) || 0), 0) + 1).padStart(3, '0');
 
-            const handleAdd = () => {
+            const handleAdd = async () => {
                 if (!newStudent.name || !newStudent.class) return;
                 const id = newStudent.id || generateId();
                 if (students.some(s => s.id === id)) { setToast({ message: 'ID déjà existant', type: 'error' }); return; }
-                setStudents([...students, { id, name: newStudent.name, class: newStudent.class }]);
-                setNewStudent({ name: '', class: '', id: '' });
-                setToast({ message: 'Élève ajouté', type: 'success' });
+
+                // Name Split Logic
+                const parts = newStudent.name.trim().split(' ');
+                const firstName = parts[0];
+                const lastName = parts.slice(1).join(' ') || '';
+
+                try {
+                    const res = await fetch(`${API_URL}/students`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id, firstName, lastName, studentClass: newStudent.class, present: false })
+                    });
+
+                    if (!res.ok) throw new Error("Erreur ajout élève");
+
+                    const saved = await res.json();
+
+                    // Update Local View (Map Backend -> Frontend)
+                    // Note: Backend returns {id, firstName...}, Frontend needs {id, name, class...}
+                    const mapped = {
+                        id: saved.id,
+                        name: `${saved.firstName || ''} ${saved.lastName || ''}`.trim(),
+                        class: saved.studentClass,
+                        present: saved.present,
+                        lastEntry: saved.lastEntry
+                    };
+
+                    setStudents([...students, mapped]);
+                    setNewStudent({ name: '', class: '', id: '' });
+                    setToast({ message: 'Élève ajouté (API)', type: 'success' });
+                } catch (e) {
+                    console.error(e);
+                    setToast({ message: "Erreur serveur : impossible d'ajouter", type: 'error' });
+                }
             };
 
-            const handleDelete = (id) => {
+            const handleDelete = async (id) => {
                 if (!confirm('Supprimer cet élève ?')) return;
-                setStudents(students.filter(s => s.id !== id));
+                try {
+                    const res = await fetch(`${API_URL}/students/${id}`, { method: 'DELETE' });
+                    if (!res.ok) throw new Error("Erreur suppression");
+                    setStudents(students.filter(s => s.id !== id));
+                    setToast({ message: 'Élève supprimé', type: 'success' });
+                } catch (e) {
+                    console.error(e);
+                    setToast({ message: "Erreur serveur", type: 'error' });
+                }
             };
 
             const handleEdit = (s) => setEditing({ ...s });
-            const handleSaveEdit = () => {
-                setStudents(students.map(s => s.id === editing.id ? editing : s));
-                setEditing(null);
+
+            const handleSaveEdit = async () => {
+                // Name Split Logic
+                const parts = editing.name.trim().split(' ');
+                const firstName = parts[0];
+                const lastName = parts.slice(1).join(' ') || '';
+
+                try {
+                    const res = await fetch(`${API_URL}/students/${editing.id}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ firstName, lastName, studentClass: editing.class, present: editing.present, lastEntry: editing.lastEntry })
+                    });
+
+                    if (!res.ok) throw new Error("Erreur mise à jour");
+
+                    const saved = await res.json();
+                    const mapped = {
+                        id: saved.id,
+                        name: `${saved.firstName || ''} ${saved.lastName || ''}`.trim(),
+                        class: saved.studentClass,
+                        present: saved.present,
+                        lastEntry: saved.lastEntry
+                    };
+
+                    setStudents(students.map(s => s.id === editing.id ? mapped : s));
+                    setEditing(null);
+                    setToast({ message: 'Modifications enregistrées', type: 'success' });
+                } catch (e) {
+                    console.error(e);
+                    setToast({ message: "Erreur serveur", type: 'error' });
+                }
             };
 
             return (
@@ -927,7 +996,7 @@
         };
 
         // MAIN APP
-        const API_URL = "http://localhost:8081/api";
+        // MAIN APP
 
         function App() {
             // API State
@@ -940,11 +1009,31 @@
             useEffect(() => {
                 const init = async () => {
                     try {
-                        const res = await fetch(`${API_URL}/students`);
-                        if (!res.ok) throw new Error("API Error");
-                        const data = await res.json();
-                        setStudents(data);
-                        setPresentStudents(new Set(data.filter(s => s.present).map(s => s.id)));
+                        const [resStudents, resLogs] = await Promise.all([
+                            fetch(`${API_URL}/students`),
+                            fetch(`${API_URL}/logs`)
+                        ]);
+
+                        if (!resStudents.ok || !resLogs.ok) throw new Error("API Error");
+
+                        const localStudents = await resStudents.json();
+                        // Map Backend (firstName, lastName, studentClass) to Frontend (name, class)
+                        const mappedStudents = localStudents.map(s => ({
+                            id: s.id,
+                            name: `${s.firstName || ''} ${s.lastName || ''}`.trim(),
+                            class: s.studentClass || '',
+                            present: s.present,
+                            lastEntry: s.lastEntry
+                        }));
+
+                        setStudents(mappedStudents);
+                        setPresentStudents(new Set(mappedStudents.filter(s => s.present).map(s => s.id)));
+
+                        const remoteLogs = await resLogs.json();
+                        // Backend logs: {id, studentId, action, timestamp}
+                        // Frontend logs: {studentId, action, timestamp} (id is optional for display)
+                        setLogs(remoteLogs);
+
                         setServerOnline(true);
                     } catch (e) {
                         console.error(e);
@@ -954,7 +1043,8 @@
                 };
                 init();
             }, []);
-            const [logs, setLogs] = useState(() => { const l = localStorage.getItem(STORAGE.logs); return l ? JSON.parse(l) : []; });
+
+            const [logs, setLogs] = useState([]); // No localStorage for logs
             const [muted, setMuted] = useState(() => localStorage.getItem(STORAGE.muted) === 'true');
             const [pin, setPin] = useState(() => localStorage.getItem(STORAGE.pin) || DEFAULT_PIN);
 
@@ -998,8 +1088,8 @@
             };
 
             // Persist & Unsaved Changes Logic
-            // Persist (Only Logs & Settings now)
-            useEffect(() => { localStorage.setItem(STORAGE.logs, JSON.stringify(logs)); setUnsavedChanges(true); }, [logs]);
+            // Persist (Only Settings now)
+            // Removed logs persistence
             useEffect(() => { localStorage.setItem(STORAGE.muted, muted); }, [muted]);
             useEffect(() => { localStorage.setItem('cdi_encrypt', encryptBackup); }, [encryptBackup]);
             useEffect(() => { localStorage.setItem('cdi_backup_time', backupTime); }, [backupTime]);
@@ -1098,7 +1188,17 @@
                     if (!res.ok) throw new Error('Server Error');
 
                     const updated = await res.json();
-                    setStudents(prev => prev.map(s => s.id === updated.id ? updated : s));
+
+                    // Map Backend -> Frontend
+                    const mapped = {
+                        id: updated.id,
+                        name: `${updated.firstName || ''} ${updated.lastName || ''}`.trim(),
+                        class: updated.studentClass,
+                        present: updated.present,
+                        lastEntry: updated.lastEntry
+                    };
+
+                    setStudents(prev => prev.map(s => s.id === updated.id ? mapped : s));
 
                     const wasIn = !updated.present; // If it *was* in, now it is present=false? No, wait.
                     // Backend toggles. If returned student.present is true, they JUST ENTERED.
@@ -1107,7 +1207,7 @@
                     const isEntering = updated.present;
                     setPresentStudents(prev => { const next = new Set(prev); isEntering ? next.add(updated.id) : next.delete(updated.id); return next; });
 
-                    const studentName = updated.firstName ? `${updated.firstName} ${updated.lastName}` : (updated.name || 'Élève');
+                    const studentName = mapped.name || 'Élève';
 
                     setLogs(prev => [...prev, { studentId: updated.id, action: isEntering ? 'IN' : 'OUT', timestamp: Date.now() }]);
 

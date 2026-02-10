@@ -1,6 +1,8 @@
 package com.school.cdi.controller;
 
+import com.school.cdi.model.AttendanceLog;
 import com.school.cdi.model.Student;
+import com.school.cdi.repository.AttendanceLogRepository;
 import com.school.cdi.repository.StudentRepository;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -11,14 +13,16 @@ import java.util.Optional;
 
 @RestController
 @RequestMapping("/api")
-@CrossOrigin(origins = "*") // Critical: Allow access from local HTML file
+@CrossOrigin(originPatterns = "*") // Critical: Allow access from local HTML file
 public class AttendanceController {
 
     private final StudentRepository studentRepository;
+    private final AttendanceLogRepository attendanceLogRepository;
 
     // Constructor Injection
-    public AttendanceController(StudentRepository studentRepository) {
+    public AttendanceController(StudentRepository studentRepository, AttendanceLogRepository attendanceLogRepository) {
         this.studentRepository = studentRepository;
+        this.attendanceLogRepository = attendanceLogRepository;
     }
 
     @GetMapping("/students")
@@ -26,9 +30,40 @@ public class AttendanceController {
         return studentRepository.findAll();
     }
 
+    @PostMapping("/students")
+    public ResponseEntity<Student> addStudent(@RequestBody Student student) {
+        if (studentRepository.existsById(student.getId())) {
+            return ResponseEntity.badRequest().build();
+        }
+        return ResponseEntity.ok(studentRepository.save(student));
+    }
+
     @GetMapping("/students/present")
     public List<Student> getPresentStudents() {
         return studentRepository.findByIsPresentTrue();
+    }
+
+    @GetMapping("/logs")
+    public List<AttendanceLog> getAllLogs() {
+        return attendanceLogRepository.findAll();
+    }
+
+    @DeleteMapping("/students/{id}")
+    public ResponseEntity<Void> deleteStudent(@PathVariable String id) {
+        if (!studentRepository.existsById(id)) {
+            return ResponseEntity.notFound().build();
+        }
+        studentRepository.deleteById(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PutMapping("/students/{id}")
+    public ResponseEntity<Student> updateStudent(@PathVariable String id, @RequestBody Student student) {
+        if (!studentRepository.existsById(id)) {
+            return ResponseEntity.notFound().build();
+        }
+        student.setId(id); // Ensure ID matches path
+        return ResponseEntity.ok(studentRepository.save(student));
     }
 
     @PostMapping("/scan/{studentId}")
@@ -49,6 +84,14 @@ public class AttendanceController {
         }
 
         Student updatedStudent = studentRepository.save(student);
+
+        // Log the action
+        AttendanceLog log = new AttendanceLog();
+        log.setStudentId(student.getId());
+        log.setAction(newStatus ? "IN" : "OUT");
+        log.setTimestamp(LocalDateTime.now());
+        attendanceLogRepository.save(log);
+
         return ResponseEntity.ok(updatedStudent);
     }
 }
