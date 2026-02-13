@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CDI SafeTrack</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="libs/tailwindcss.js"></script>
     <script src="libs/react.min.js"></script>
     <script src="libs/react-dom.min.js"></script>
     <script src="libs/babel.min.js"></script>
@@ -1097,7 +1097,7 @@
             }, [unsavedChanges]);
 
             // Export Backup Logic (Moved to App)
-            const exportBackup = useCallback((silent = false) => {
+            const exportBackup = useCallback(async (silent = false) => {
                 let password = null;
                 if (encryptBackup && !silent) {
                     password = prompt("🔐 Définir un mot de passe pour cette sauvegarde (optionnel mais recommandé):");
@@ -1113,6 +1113,24 @@
                     settings: { muted, pin, encryptBackup, backupTime },
                     encrypted: !!password
                 };
+
+                // Native Electron Backup (Support for Auto-Backup)
+                if (window.electronAPI && !password) {
+                    const filename = `cdi_backup_${new Date().toISOString().slice(0, 10)}.json`;
+                    const result = await window.electronAPI.saveBackup({ data, filename });
+
+                    if (result.success) {
+                        const today = new Date().toISOString().slice(0, 10);
+                        setLastBackup(today);
+                        setUnsavedChanges(false);
+                        if (!silent) setToast({ message: 'Sauvegarde effectuée (Documents)', type: 'success' });
+                        return;
+                    } else {
+                        console.error("Backup failed:", result.error);
+                        // Fallback to download if failed? For now just log error.
+                        if (!silent) setToast({ message: "Erreur sauvegarde native", type: "error" });
+                    }
+                }
 
                 let content = JSON.stringify(data, null, 2);
                 if (password) {

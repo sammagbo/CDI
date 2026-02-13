@@ -1,0 +1,33 @@
+{
+    "name": "cdi-safetrack",
+    "version": "1.0.0",
+    "description": "Système de Gestion CDI - Application Desktop",
+    "main": "main.js",
+    "author": "CDI Manager",
+    "license": "MIT",
+    "scripts": {
+        "start": "electron .",
+        "pack": "electron-builder --dir",
+        "dist": "electron-builder"
+    },
+    "build": {
+        "appId": "com.cdi.safetrack",
+        "productName": "CDI SafeTrack",
+        "files": [
+            "**/*",
+            "resources/backend.jar"
+        ],
+        "win": {
+            "target": "nsis",
+            "icon": "build/icon.ico"
+        },
+        "nsis": {
+            "oneClick": false,
+            "allowToChangeInstallationDirectory": true
+        }
+    },
+    "devDependencies": {
+        "electron": "^28.2.0",
+        "electron-builder": "^24.9.1"
+    }
+}

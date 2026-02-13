@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background: transparent;
+            user-select: none;
+            font-family: system-ui, -apple-system, sans-serif;
+        }
+
+        .container {
+            background: white;
+            padding: 2rem;
+            border-radius: 1rem;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+            text-align: center;
+            width: 300px;
+            border: 1px solid #e2e8f0;
+        }
+
+        .spinner {
+            margin: 1rem auto;
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3b82f6;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        h2 {
+            color: #1e293b;
+            margin: 0;
+            font-size: 1.25rem;
+        }
+
+        p {
+            color: #64748b;
+            font-size: 0.875rem;
+            margin-top: 0.5rem;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h2>CDI SafeTrack</h2>
+        <div class="spinner"></div>
+        <p>Démarrage du système...</p>
+    </div>
+</body>
+
+</html>

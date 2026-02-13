@@ -25,6 +25,11 @@ public class AttendanceController {
         this.attendanceLogRepository = attendanceLogRepository;
     }
 
+    @GetMapping("/health")
+    public ResponseEntity<java.util.Map<String, String>> health() {
+        return ResponseEntity.ok(java.util.Map.of("status", "UP"));
+    }
+
     @GetMapping("/students")
     public List<Student> getAllStudents() {
         return studentRepository.findAll();
