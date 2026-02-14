@@ -53,6 +53,17 @@ public class AttendanceController {
         return attendanceLogRepository.findAll();
     }
 
+    @PostMapping("/logs")
+    public ResponseEntity<AttendanceLog> addLog(@RequestBody AttendanceLog log) {
+        return ResponseEntity.ok(attendanceLogRepository.save(log));
+    }
+
+    @PostMapping("/logs/batch")
+    public ResponseEntity<java.util.Map<String, Integer>> addLogsBatch(@RequestBody List<AttendanceLog> logs) {
+        List<AttendanceLog> saved = attendanceLogRepository.saveAll(logs);
+        return ResponseEntity.ok(java.util.Map.of("inserted", saved.size()));
+    }
+
     @DeleteMapping("/students/{id}")
     public ResponseEntity<Void> deleteStudent(@PathVariable String id) {
         if (!studentRepository.existsById(id)) {
