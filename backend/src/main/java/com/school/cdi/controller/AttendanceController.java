@@ -5,29 +5,34 @@ import com.school.cdi.model.Student;
 import com.school.cdi.repository.AttendanceLogRepository;
 import com.school.cdi.repository.StudentRepository;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+import lombok.RequiredArgsConstructor;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @RestController
 @RequestMapping("/api")
+@RequiredArgsConstructor
 @CrossOrigin(originPatterns = "*") // Critical: Allow access from local HTML file
 public class AttendanceController {
 
     private final StudentRepository studentRepository;
     private final AttendanceLogRepository attendanceLogRepository;
 
-    // Constructor Injection
-    public AttendanceController(StudentRepository studentRepository, AttendanceLogRepository attendanceLogRepository) {
-        this.studentRepository = studentRepository;
-        this.attendanceLogRepository = attendanceLogRepository;
-    }
-
     @GetMapping("/health")
-    public ResponseEntity<java.util.Map<String, String>> health() {
-        return ResponseEntity.ok(java.util.Map.of("status", "UP"));
+    public ResponseEntity<Map<String, String>> health() {
+        return ResponseEntity.ok(Map.of("status", "UP"));
     }
 
     @GetMapping("/students")
@@ -59,9 +64,9 @@ public class AttendanceController {
     }
 
     @PostMapping("/logs/batch")
-    public ResponseEntity<java.util.Map<String, Integer>> addLogsBatch(@RequestBody List<AttendanceLog> logs) {
+    public ResponseEntity<Map<String, Integer>> addLogsBatch(@RequestBody List<AttendanceLog> logs) {
         List<AttendanceLog> saved = attendanceLogRepository.saveAll(logs);
-        return ResponseEntity.ok(java.util.Map.of("inserted", saved.size()));
+        return ResponseEntity.ok(Map.of("inserted", saved.size()));
     }
 
     @DeleteMapping("/students/{id}")
